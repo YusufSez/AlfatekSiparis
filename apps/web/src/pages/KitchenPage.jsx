@@ -156,6 +156,7 @@ export default function KitchenPage() {
           <Skeleton rows={4} />
         ) : tickets.length === 0 ? (
           <EmptyState
+            icon="🍽️"
             title="Bekleyen sipariş yok"
             description="Ofislerden onaylanan siparişler burada özet olarak görünür."
           />

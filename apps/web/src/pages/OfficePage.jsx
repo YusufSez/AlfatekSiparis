@@ -239,6 +239,7 @@ export default function OfficePage() {
 
         {!session && (
           <EmptyState
+            icon="🧾"
             title="Sipariş yok"
             description="Ofisiniz için yeni bir toplu sipariş açın. Herkes anında bildirim alır."
             action={

@@ -1,20 +1,23 @@
-export function Skeleton({ rows = 3, className = '' }) {
-  return (
-    <div className={`skeleton-block ${className}`} aria-busy="true" aria-label="Yükleniyor">
-      {Array.from({ length: rows }).map((_, i) => (
-        <div key={i} className="skeleton-row" style={{ width: `${88 - i * 12}%` }} />
-      ))}
-    </div>
-  );
-}
-
-export function EmptyState({ title, description, action }) {
+export function EmptyState({ title, description, action, icon = '📭' }) {
   return (
     <section className="hero-panel empty-state-panel">
+      <div className="empty-icon" aria-hidden>
+        {icon}
+      </div>
       <h1>{title}</h1>
       {description && <p>{description}</p>}
       {action}
     </section>
+  );
+}
+
+export function Skeleton({ rows = 3, className = '' }) {
+  return (
+    <div className={`skeleton-block ${className}`} aria-busy="true" aria-label="Yükleniyor">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div key={i} className="skeleton-row" style={{ width: `${92 - (i % 4) * 10}%` }} />
+      ))}
+    </div>
   );
 }
 
