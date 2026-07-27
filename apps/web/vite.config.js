@@ -2,8 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
-/** SPA navigations (Accept: text/html) must not hit the API proxy. */
+/** SPA navigations must not hit the API proxy. */
 function spaBypass(req) {
+  const mode = req.headers['sec-fetch-mode'];
+  const dest = req.headers['sec-fetch-dest'];
+  if (mode === 'navigate' || dest === 'document') {
+    return '/index.html';
+  }
   if (req.headers.accept?.includes('text/html')) {
     return '/index.html';
   }

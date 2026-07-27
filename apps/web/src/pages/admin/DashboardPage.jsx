@@ -197,7 +197,7 @@ export default function DashboardPage() {
               <li key={log.id}>
                 <span className="timeline-dot" aria-hidden />
                 <div>
-                  <p>{logSentence(log)}</p>
+                    <p>{logSentence(log, { withIcon: false })}</p>
                   <small className="muted">
                     {log.actor?.office?.name ? `${log.actor.office.name} · ` : ''}
                     {formatDateTime(log.createdAt)}

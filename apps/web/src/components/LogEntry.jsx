@@ -6,15 +6,16 @@ function payloadRows(payload) {
   if (!payload || typeof payload !== 'object') return [];
   return Object.entries(payload).map(([k, v]) => ({
     key: k,
-    label: ({
-      menuItemName: 'Ürün',
-      qty: 'Adet',
-      name: 'Ad',
-      username: 'Kullanıcı adı',
-      officeId: 'Ofis',
-      sessionId: 'Sipariş',
-      ticketId: 'Mutfak fişi',
-    }[k] || k),
+    label:
+      {
+        menuItemName: 'Ürün',
+        qty: 'Adet',
+        name: 'Ad',
+        username: 'Kullanıcı adı',
+        officeId: 'Ofis',
+        sessionId: 'Sipariş',
+        ticketId: 'Mutfak fişi',
+      }[k] || k,
     value: typeof v === 'object' ? JSON.stringify(v) : String(v),
   }));
 }
@@ -25,6 +26,8 @@ export default function LogEntry({ log }) {
   const actor = log.actor?.name || 'Sistem';
   const office = log.actor?.office?.name;
   const rows = payloadRows(log.payload);
+  // Single icon in the left column — never repeat in the sentence
+  const sentence = logSentence(log, { withIcon: false });
 
   return (
     <li className={`log-entry tone-${desc.tone}`}>
@@ -32,7 +35,7 @@ export default function LogEntry({ log }) {
         {desc.icon}
       </div>
       <div className="log-main">
-        <p className="log-sentence">{logSentence(log)}</p>
+        <p className="log-sentence">{sentence}</p>
         <div className="log-meta">
           {office && <span className="muted">{office}</span>}
           <time className="muted">{formatLogTime(log.createdAt)}</time>
@@ -51,7 +54,7 @@ export default function LogEntry({ log }) {
           </button>
         }
       >
-        <p className="log-sentence detail-sentence">{logSentence(log)}</p>
+        <p className="log-sentence detail-sentence">{logSentence(log, { withIcon: true })}</p>
         <dl className="detail-list">
           <div>
             <dt>Kim</dt>

@@ -29,20 +29,22 @@ export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onCloseM
       <aside
         className={`admin-sidebar ${collapsed ? 'is-collapsed' : ''} ${mobileOpen ? 'is-mobile-open' : ''}`}
       >
-        <div className={`sidebar-brand ${collapsed ? 'collapsed' : ''}`}>
-          <img src="/alfatek.png" alt="" width={28} height={28} />
-          {!collapsed && <span className="sidebar-brand-text">ALFATEK</span>}
+        <div className={`sidebar-brand ${collapsed ? 'is-collapsed' : ''}`}>
+          <div className="sidebar-brand-main">
+            <img src="/alfatek.png" alt="" width={28} height={28} />
+            {!collapsed && <span className="sidebar-brand-text">ALFATEK</span>}
+          </div>
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            onClick={onToggle}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Kenar çubuğunu genişlet' : 'Kenar çubuğunu daralt'}
+            title={collapsed ? 'Genişlet' : 'Daralt'}
+          >
+            {collapsed ? '»' : '«'}
+          </button>
         </div>
-
-        <button
-          type="button"
-          className="sidebar-collapse-btn"
-          onClick={onToggle}
-          aria-label={collapsed ? 'Kenar çubuğunu genişlet' : 'Kenar çubuğunu daralt'}
-          title={collapsed ? 'Genişlet' : 'Daralt'}
-        >
-          {collapsed ? '»' : '«'}
-        </button>
 
         <nav className="sidebar-nav" aria-label="Admin menü">
           {NAV.map((item) => (

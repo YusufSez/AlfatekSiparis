@@ -39,6 +39,26 @@ function Guard({ roles, children, onForbidden = 'home', loginTo = '/login' }) {
   return children;
 }
 
+/** Admin area: guests → login; non-admin → forbidden; admin → layout */
+function AdminGate() {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+
+  if (loading) return <div className="boot">Yükleniyor…</div>;
+
+  if (!user) {
+    return (
+      <Navigate to="/admin/login" replace state={{ from: returnPath(location) }} />
+    );
+  }
+
+  if (user.role !== 'admin') {
+    return <ForbiddenPage />;
+  }
+
+  return <AdminLayout />;
+}
+
 function LoginRoute() {
   const { user } = useAuth();
   const location = useLocation();
@@ -57,9 +77,11 @@ function LoginRoute() {
 }
 
 function AdminLoginRoute() {
-  const { user } = useAuth();
-  if (!user) return <AdminLoginPage />;
-  if (user.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
+  const { user, loading } = useAuth();
+  if (loading) return <div className="boot">Yükleniyor…</div>;
+  if (user?.role === 'admin') {
+    return <Navigate to="/admin/dashboard" replace />;
+  }
   return <AdminLoginPage />;
 }
 
@@ -98,14 +120,7 @@ export default function App() {
         }
       />
 
-      <Route
-        path="/admin"
-        element={
-          <Guard roles={['admin']} onForbidden="page" loginTo="/admin/login">
-            <AdminLayout />
-          </Guard>
-        }
-      >
+      <Route path="/admin" element={<AdminGate />}>
         <Route index element={<Navigate to="dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="offices" element={<OfficesPage />} />

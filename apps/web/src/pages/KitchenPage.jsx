@@ -6,6 +6,7 @@ import AppHeader from '../components/AppHeader';
 import AnnouncementBanner from '../components/AnnouncementBanner';
 import { Skeleton, LoadError, OfflineBanner, EmptyState, CardSkeleton } from '../components/LoadStates';
 import { useOnline } from '../lib/useOnline';
+import { iconMeta } from '../lib/uxLabels';
 
 const STATUS_LABEL = {
   new: 'Bekliyor',
@@ -231,6 +232,9 @@ export default function KitchenPage() {
                   <ul className="ticket-summary hero-summary">
                     {ticket.summary.map((s) => (
                       <li key={s.menuItemId}>
+                        <span className="big-emoji" aria-hidden>
+                          {iconMeta(s.icon).emoji}
+                        </span>
                         <span className="big-qty">{s.qty}</span>
                         <span className="big-name">{s.name}</span>
                       </li>

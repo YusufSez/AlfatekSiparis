@@ -1,10 +1,16 @@
-import { Link } from 'react-router-dom';
+import { Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { homeFor } from '../lib/format';
 
 export default function ForbiddenPage() {
   const { user, logout } = useAuth();
-  const to = homeFor(user?.role);
+
+  // Guests must never see this page — send them to admin login
+  if (!user) {
+    return <Navigate to="/admin/login" replace />;
+  }
+
+  const to = homeFor(user.role);
 
   return (
     <div className="forbidden-shell">
@@ -13,7 +19,9 @@ export default function ForbiddenPage() {
           🔒
         </div>
         <h1>Yetki yok</h1>
-        <p className="muted">Bu hesap yönetim paneline erişemez. Admin hesabıyla giriş yapın.</p>
+        <p className="muted">
+          Bu hesap ({user.name}) yönetim paneline erişemez. Yalnızca admin hesabı kullanın.
+        </p>
         <div className="row-actions wrap">
           <Link className="btn primary" to={to}>
             Ana ekrana dön

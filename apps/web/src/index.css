@@ -2747,12 +2747,14 @@ html[data-theme='dark'] .stack-form textarea {
   font-family: var(--display);
 }
 
+/* Sidebar — toggle stays inside brand row */
 .admin-layout {
   --sidebar-w: 280px;
   display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
   min-height: 100vh;
   background: var(--bg);
+  transition: grid-template-columns 0.2s ease;
 }
 
 .admin-layout.sidebar-collapsed {
@@ -2763,31 +2765,82 @@ html[data-theme='dark'] .stack-form textarea {
   position: sticky;
   top: 0;
   height: 100vh;
+  width: 100%;
+  max-width: var(--sidebar-w);
   display: flex;
   flex-direction: column;
   background: var(--card);
   border-right: 1px solid var(--line);
   z-index: 30;
+  overflow-x: hidden;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.admin-main {
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 1rem 0.85rem;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.85rem 0.75rem;
   font-weight: 800;
   letter-spacing: 0.06em;
   border-bottom: 1px solid var(--line);
+  min-height: 56px;
+  box-sizing: border-box;
 }
 
-.sidebar-brand img {
-  border-radius: 8px;
+.sidebar-brand-main {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.sidebar-brand.is-collapsed {
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.75rem 0.4rem;
 }
 
 .sidebar-collapse-btn {
-  margin-left: auto;
-  min-width: 36px;
-  padding-inline: 0.4rem;
+  position: static !important;
+  transform: none !important;
+  right: auto !important;
+  top: auto !important;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  min-height: 28px;
+  margin: 0 !important;
+  padding: 0;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--ink);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  z-index: 1;
+}
+
+.admin-sidebar.is-collapsed .sidebar-nav {
+  padding-top: 0.75rem;
+}
+
+.admin-sidebar.is-collapsed .sidebar-link {
+  justify-content: center;
+  padding-inline: 0.55rem;
 }
 
 .sidebar-nav {
@@ -3245,41 +3298,14 @@ html[data-theme='dark'] .stack-form textarea {
   margin: 0;
 }
 
-/* Sidebar collapse fix */
+/* Sidebar collapse — brand-row toggle (no absolute overlay) */
 .admin-sidebar {
   position: sticky;
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
 .admin-sidebar.is-collapsed .sidebar-brand {
   justify-content: center;
-  padding-inline: 0.5rem;
-}
-
-.sidebar-collapse-btn {
-  position: absolute;
-  top: 4.35rem;
-  right: 0.45rem;
-  z-index: 2;
-  width: 28px;
-  height: 28px;
-  min-height: 28px;
-  padding: 0;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: var(--card);
-  color: var(--ink);
-  cursor: pointer;
-  display: grid;
-  place-items: center;
-  font-size: 0.85rem;
-  transition: background 0.2s ease, transform 0.2s ease;
-}
-
-.admin-sidebar.is-collapsed .sidebar-collapse-btn {
-  right: 50%;
-  transform: translateX(50%);
-  top: 3.85rem;
 }
 
 .sidebar-collapse-btn:hover {
@@ -3300,15 +3326,6 @@ html[data-theme='dark'] .stack-form textarea {
   width: 3px;
   border-radius: 0 3px 3px 0;
   background: var(--primary);
-}
-
-.admin-sidebar.is-collapsed .sidebar-link {
-  justify-content: center;
-  padding-inline: 0.55rem;
-}
-
-.admin-sidebar.is-collapsed .sidebar-nav {
-  padding-top: 2.25rem;
 }
 
 /* Dashboard density */
@@ -3760,5 +3777,176 @@ html[data-theme='dark'] .table-select {
   .kitchen-stats-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+}
+/* Bugfix sprint — active order, quick order, kitchen emoji */
+
+.session-banner.mega.active-order-card {
+  display: block;
+  padding: 1.25rem 1.35rem;
+}
+
+.active-order-main {
+  display: grid;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.active-order-main h2 {
+  margin: 0;
+}
+
+.timer.mega.inline-timer {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.65rem 1rem;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.timer.mega.inline-timer span {
+  font-size: clamp(1.75rem, 4vw, 2.4rem);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.participant-boards {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.participant-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.participant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  padding: 0.3rem 0.55rem 0.3rem 0.3rem;
+  border-radius: 999px;
+  line-height: 1.2;
+}
+
+.participant-chip .chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 9rem;
+}
+
+.participant-chip .avatar.sm {
+  flex-shrink: 0;
+}
+
+.quick-order-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.75rem;
+}
+
+.quick-order-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.quick-order-card.has-qty {
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--line));
+}
+
+.quick-order-main {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: var(--radius-sm);
+}
+
+.quick-order-main:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.qo-emoji {
+  font-size: 1.85rem;
+  line-height: 1;
+}
+
+.qo-qty-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.qo-step {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+}
+
+.qo-qty {
+  min-width: 1.75rem;
+  text-align: center;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.hero-summary li {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.big-emoji {
+  font-size: clamp(1.75rem, 3vw, 2.4rem);
+  line-height: 1;
+}
+
+.ticket-card.big .big-qty {
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket-card.big .big-name {
+  font-size: clamp(1.1rem, 2.2vw, 1.55rem);
+  font-weight: 700;
+  text-transform: none;
+}
+
+.summary-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+@media (max-width: 720px) {
+  .participant-boards {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-order-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

@@ -264,9 +264,10 @@ export default function OfficePage() {
               <div className="active-order-main">
                 <p className="eyebrow">Aktif Sipariş</p>
                 <h2>{session.openedBy.name} sipariş topluyor</h2>
-                <p className="active-order-timer-line countdown-hero">
-                  Kalan süre: <strong>{label}</strong>
-                </p>
+                <div className={`timer mega inline-timer ${urgent ? 'pulse' : ''}`} aria-live="polite">
+                  <span>{label}</span>
+                  <small>{remaining === 0 ? 'Kapanıyor' : 'Kalan süre'}</small>
+                </div>
                 <div className="participant-boards">
                   <div>
                     <h4>Katılanlar</h4>
@@ -277,7 +278,7 @@ export default function OfficePage() {
                       {(session.participants || []).map((p) => (
                         <span key={p.id} className="participant-chip joined">
                           <span className="avatar sm">{initials(p.name)}</span>
-                          {p.name}
+                          <span className="chip-name">{p.name}</span>
                           <em>Hazır</em>
                         </span>
                       ))}
@@ -292,7 +293,7 @@ export default function OfficePage() {
                       {(session.pendingUsers || []).map((u) => (
                         <span key={u.id} className="participant-chip pending">
                           <span className="avatar sm">{initials(u.name)}</span>
-                          {u.name}
+                          <span className="chip-name">{u.name}</span>
                           <em>Bekliyor</em>
                         </span>
                       ))}
@@ -300,53 +301,45 @@ export default function OfficePage() {
                   </div>
                 </div>
               </div>
-              <div className={`timer mega ${urgent ? 'pulse' : ''}`} aria-live="polite">
-                <span>{label}</span>
-                <small>{remaining === 0 ? 'Kapanıyor' : 'Kalan süre'}</small>
-              </div>
             </section>
 
             <section className="quick-order">
               <h3>Hızlı Sipariş</h3>
-              <p className="muted tiny">Tek dokunuşla +1 ekler.</p>
+              <p className="muted tiny">Ürüne dokunun veya + / − ile adedi ayarlayın.</p>
               <div className="quick-order-grid">
-                {menu.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="quick-order-btn"
-                    onClick={() => setQty(item.id, (myQty[item.id] || 0) + 1)}
-                  >
-                    <span aria-hidden>{iconMeta(item.icon).emoji}</span>
-                    <strong>{item.name}</strong>
-                    {(myQty[item.id] || 0) > 0 && <em>{myQty[item.id]}</em>}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="menu-section">
-              <h3 className="section-heading">Menü</h3>
-              <div className="menu-grid">
                 {menu.map((item) => {
                   const qty = myQty[item.id] || 0;
                   return (
-                    <div key={item.id} className={`menu-card ${qty ? 'active' : ''}`}>
-                      <div className="menu-icon">{iconMeta(item.icon).emoji}</div>
-                      <div className="menu-name">{item.name}</div>
-                      <div className="qty-row">
+                    <div key={item.id} className={`quick-order-card ${qty ? 'has-qty' : ''}`}>
+                      <button
+                        type="button"
+                        className="quick-order-main"
+                        onClick={() => setQty(item.id, qty + 1)}
+                        aria-label={`${item.name} ekle`}
+                      >
+                        <span className="qo-emoji" aria-hidden>
+                          {iconMeta(item.icon).emoji}
+                        </span>
+                        <strong>{item.name}</strong>
+                      </button>
+                      <div className="qo-qty-row">
                         <button
                           type="button"
-                          className="btn ghost"
+                          className="btn ghost qo-step"
+                          disabled={qty <= 0}
                           onClick={() => setQty(item.id, Math.max(0, qty - 1))}
+                          aria-label="Azalt"
                         >
                           −
                         </button>
-                        <span className="qty">{qty}</span>
+                        <span className="qo-qty" aria-live="polite">
+                          {qty}
+                        </span>
                         <button
                           type="button"
-                          className="btn ghost"
+                          className="btn ghost qo-step"
                           onClick={() => setQty(item.id, qty + 1)}
+                          aria-label="Arttır"
                         >
                           +
                         </button>
@@ -365,6 +358,7 @@ export default function OfficePage() {
                 <ul className="summary-list">
                   {session.summary.map((s) => (
                     <li key={s.menuItemId}>
+                      <span aria-hidden>{iconMeta(s.icon).emoji}</span>
                       <strong>{s.qty}×</strong> {s.name}
                     </li>
                   ))}

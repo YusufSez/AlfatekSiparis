@@ -110,14 +110,16 @@ export function describeLog(log) {
 }
 
 /** Human sentence: "Yusuf yeni sipariş başlattı." */
-export function logSentence(log) {
+export function logSentence(log, { withIcon = true } = {}) {
   const desc = describeLog(log);
   const actor = log.actor?.name;
-  // ticket.* messages already start with Mutfak/Sipariş
+  let text;
   if (/^ticket\./.test(log.action) || !actor) {
-    return `${desc.icon} ${desc.text.charAt(0).toUpperCase()}${desc.text.slice(1)}`;
+    text = `${desc.text.charAt(0).toUpperCase()}${desc.text.slice(1)}`;
+  } else {
+    text = `${actor} ${desc.text}`;
   }
-  return `${desc.icon} ${actor} ${desc.text}`;
+  return withIcon ? `${desc.icon} ${text}` : text;
 }
 
 export { ROLE_META, ICON_META };
