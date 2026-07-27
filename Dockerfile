@@ -1,10 +1,12 @@
 # syntax=docker/dockerfile:1
 
 # ── API production image ──────────────────────────────────────────
+# npm workspaces bağımlılıkları root /app/node_modules altına hoist eder;
+# apps/api/node_modules genelde oluşmaz. Bu yüzden yalnızca root node_modules kopyalanır.
 FROM node:22-alpine AS api-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-COPY apps/api/package.json apps/api/
+COPY apps/api/package.json ./apps/api/package.json
 # prisma (migrate deploy + generate) production container'da gerekir
 RUN npm ci -w apps/api
 
@@ -12,8 +14,9 @@ FROM node:22-alpine AS api
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=api-deps /app/node_modules ./node_modules
-COPY --from=api-deps /app/apps/api/node_modules ./apps/api/node_modules
-COPY package.json package-lock.json ./
+COPY --from=api-deps /app/package.json ./package.json
+COPY --from=api-deps /app/package-lock.json ./package-lock.json
+COPY --from=api-deps /app/apps/api/package.json ./apps/api/package.json
 COPY apps/api ./apps/api
 WORKDIR /app/apps/api
 RUN npx prisma generate
@@ -26,7 +29,7 @@ WORKDIR /app
 ARG VITE_API_URL=
 ENV VITE_API_URL=$VITE_API_URL
 COPY package.json package-lock.json ./
-COPY apps/web/package.json apps/web/
+COPY apps/web/package.json ./apps/web/package.json
 RUN npm ci -w apps/web
 COPY apps/web ./apps/web
 RUN npm run build -w apps/web
