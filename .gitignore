@@ -11,6 +11,11 @@ apps/api/prisma/test.db
 apps/api/prisma/test.db-journal
 apps/api/prisma/migrate-baseline.db
 apps/api/coverage/
+apps/api/test-results/
+apps/api/*.log
+apps/web/build.log
+audit.log
+
 *.log
 .vite/
 dev-dist/

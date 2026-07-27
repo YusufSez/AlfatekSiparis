@@ -5,7 +5,8 @@ FROM node:22-alpine AS api-deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/
-RUN npm ci -w apps/api --omit=dev
+# prisma (migrate deploy + generate) production container'da gerekir
+RUN npm ci -w apps/api
 
 FROM node:22-alpine AS api
 WORKDIR /app

@@ -1,0 +1,173 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  NODE_VERSION: '22'
+  JWT_SECRET: ci-test-secret-not-for-production
+  DATABASE_URL: file:./test.db
+  CORS_ORIGIN: http://localhost:5173
+  NODE_ENV: test
+  CI: true
+
+jobs:
+  verify:
+    name: Test · Build · Docker
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Prisma generate
+        working-directory: apps/api
+        run: npx prisma generate
+
+      - name: Prisma migrate (CI SQLite)
+        working-directory: apps/api
+        run: npx prisma migrate deploy
+
+      - name: Lint (web)
+        run: npm run lint -w apps/web
+
+      - name: Test
+        run: npm test
+        env:
+          DATABASE_URL: file:./test.db
+          JWT_SECRET: ci-test-secret-not-for-production
+          NODE_ENV: test
+
+      - name: Coverage
+        run: npm run test:coverage
+        env:
+          DATABASE_URL: file:./test.db
+          JWT_SECRET: ci-test-secret-not-for-production
+          NODE_ENV: test
+
+      - name: Write coverage summary
+        if: always()
+        working-directory: apps/api
+        run: |
+          mkdir -p test-results
+          if [ -f coverage/coverage-summary.json ]; then
+            node <<'NODE'
+          const fs = require('fs');
+          const s = require('./coverage/coverage-summary.json').total;
+          const md = [
+            '### Coverage',
+            '',
+            '| Metric | Pct |',
+            '| ------ | --- |',
+            `| Statements | ${s.statements.pct}% |`,
+            `| Branches | ${s.branches.pct}% |`,
+            `| Functions | ${s.functions.pct}% |`,
+            `| Lines | ${s.lines.pct}% |`,
+            '',
+          ].join('\n');
+          fs.writeFileSync('test-results/coverage-summary.md', md);
+          console.log(md);
+          NODE
+            cat test-results/coverage-summary.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Coverage summary not found' | tee test-results/coverage-summary.md
+          fi
+
+      - name: Build API
+        run: npm run build -w apps/api 2>&1 | tee apps/api/build.log
+
+      - name: Build Web
+        run: npm run build -w apps/web 2>&1 | tee apps/web/build.log
+        env:
+          NODE_ENV: production
+          VITE_API_URL: http://localhost:4000
+
+      - name: Security audit (advisory)
+        continue-on-error: true
+        run: |
+          echo "## npm audit (high/critical — advisory only)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          npm audit --audit-level=high 2>&1 | tee audit.log | tee -a "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "_Audit does not fail the workflow._" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Docker build (API image)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: api
+          push: false
+          load: true
+          tags: alfatek-siparis-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Docker build (Web image)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: web
+          push: false
+          load: true
+          tags: alfatek-siparis-web:ci
+          build-args: |
+            VITE_API_URL=http://localhost:4000
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            apps/api/coverage/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload test results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            apps/api/test-results/
+            apps/api/coverage/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload build logs artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: |
+            apps/api/build.log
+            apps/web/build.log
+            audit.log
+          if-no-files-found: warn
+          retention-days: 14

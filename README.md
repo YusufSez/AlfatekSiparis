@@ -14,6 +14,8 @@
 | **Web** | http://localhost:5173 |
 | **API** | http://localhost:4000 |
 | **Docs** | http://localhost:4000/docs *(yalnızca development)* |
+| **CI** | [![CI](https://github.com/YusufSez/AlfatekSiparis/actions/workflows/ci.yml/badge.svg)](https://github.com/YusufSez/AlfatekSiparis/actions/workflows/ci.yml) |
+| **Coverage** | ![Coverage](https://img.shields.io/badge/coverage-pending-lightgrey) *(placeholder — Codecov/Coveralls bağlanınca güncellenir)* |
 
 ---
 
@@ -372,6 +374,9 @@ npm run test:coverage
 | **Araçlar** | Vitest + Supertest |
 | **Rapor** | `apps/api/coverage/` |
 | **Kapsam** | Auth, state machine, session (açma / 409 / line / confirm / timeout / race), kitchen + socket, NotificationService, Presence (multi-tab), metrics |
+| **CI** | Her `push` / `pull_request` → `main` üzerinde GitHub Actions (`.github/workflows/ci.yml`) |
+
+Coverage badge şu an placeholder’dır; Codecov / Coveralls bağlandığında güncellenebilir.
 
 ---
 
