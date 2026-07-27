@@ -66,6 +66,21 @@ select {
   margin-bottom: 1.25rem;
 }
 
+.header-brand {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.header-logo {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  border-radius: 8px;
+  flex-shrink: 0;
+  margin-top: 0.15rem;
+}
+
 .brand-mini,
 .brand,
 .eyebrow {
@@ -192,6 +207,25 @@ select {
   display: grid;
   gap: 0.85rem;
   animation: rise 0.45s ease;
+}
+
+.login-brand {
+  display: grid;
+  justify-items: center;
+  gap: 0.65rem;
+  text-align: center;
+  margin-bottom: 0.15rem;
+}
+
+.login-logo {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border-radius: 16px;
+}
+
+.login-brand .brand {
+  text-align: center;
 }
 
 .login-card label {

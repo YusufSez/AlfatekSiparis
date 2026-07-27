@@ -1,145 +1,198 @@
-# Ofis Sipariş
+<p align="center">
+  <img src="images/alfatek.png" alt="Alfatek" width="120" />
+</p>
 
-Teknik / Operasyon ofisleri için toplu içecek siparişi + mutfak paneli.
+<h1 align="center">Alfatek Ofis Sipariş Sistemi</h1>
 
-**Stack:** React PWA (Vite) · Express (modüler) · Prisma/SQLite · Socket.io · State Machine
+<p align="center">
+  Alfatek Ofis Sipariş Sistemi; Teknik Ofis ve Operasyon Ofisi çalışanlarının toplu içecek siparişlerini gerçek zamanlı olarak oluşturmasını, mutfak personelinin siparişleri kolayca yönetmesini sağlayan React PWA + Express tabanlı kurumsal sipariş yönetim sistemidir.
+</p>
+
+| | |
+| --- | --- |
+| **Stack** | React PWA · Express · Prisma/SQLite · Socket.io |
+| **Web** | http://localhost:5173 |
+| **API** | http://localhost:4000 |
+| **Docs** | http://localhost:4000/docs *(yalnızca development)* |
+
+---
+
+## Özellikler
+
+- Gerçek zamanlı sipariş yönetimi
+- Socket.io canlı bildirimler
+- React PWA (mobil kurulabilir)
+- Teknik / Operasyon ofisi ayrımı
+- Aynı anda tek aktif sipariş (ofis başına)
+- Kitchen paneli (new → preparing → ready → delivered)
+- Admin paneli (ofis, kullanıcı, menü, ayarlar, loglar)
+- Dashboard ve analitik kartlar
+- Global Search (kartlı sonuçlar)
+- Announcement (duyuru bandı)
+- Notification Center
+- Session Timeline
+- Presence (çoklu sekme desteği)
+- State Machine (session + ticket)
+- SessionEvent + AuditLog + `requestId`
+- Backup / Restore (modüler provider)
+- Prometheus Metrics (`/metrics`)
+- Health & Version endpointleri
+- Swagger UI (development)
+- Docker (dev) + Production Docker (multi-stage)
+- Test altyapısı (Vitest + Supertest)
+- Error Boundary
+- Offline banner, skeleton, retry
+
+---
+
+## Ekran Görüntüleri
+
+> Placeholder — görseller `images/` klasörüne eklenecek.
+
+| Ekran | Önizleme |
+| ----- | -------- |
+| Giriş | ![Login](images/login.png) |
+| Ofis | ![Office](images/office.png) |
+| Mutfak | ![Kitchen](images/kitchen.png) |
+| Admin | ![Admin](images/admin.png) |
+| Dashboard | ![Dashboard](images/dashboard.png) |
+| Mobil | ![Mobile](images/mobile.png) |
+
+---
+
+## Teknoloji Stack'i
+
+### Frontend
+
+- React
+- Vite
+- PWA (`vite-plugin-pwa`)
+- Socket.io Client
+
+### Backend
+
+- Node.js
+- Express (modüler Controller → Domain → Repository)
+- Prisma
+- SQLite *(PostgreSQL roadmap)*
+- Socket.io
+
+### Infrastructure
+
+- Docker & Docker Compose
+- Prometheus Metrics
+- Swagger / OpenAPI
+
+### Testing
+
+- Vitest
+- Supertest
+- `@vitest/coverage-v8`
+
+---
+
+## Sistem Mimarisi
+
+```mermaid
+flowchart TD
+  B[Browser / PWA] --> R[React Web]
+  R -->|HTTP REST| E[Express API]
+  R -->|WebSocket| S[Socket.io]
+  S --> E
+  E --> D[Domain / Services]
+  D --> P[Prisma]
+  P --> DB[(SQLite)]
+  D --> SM[State Machine]
+  D --> SE[SessionEvent / AuditLog]
+  D --> NS[NotificationService]
+  D --> PS[PresenceService]
+```
+
+Uygulama katmanları:
+
+```text
+Controller → Domain → Repository
+PresenceService → MemoryPresenceProvider
+NotificationService → SocketAdapter
+State Machine → session / ticket transitions
+```
+
+---
+
+## Proje Yapısı
+
+```text
+order/
+├── apps/
+│   ├── api/
+│   │   ├── prisma/              # schema, migrations, seed
+│   │   ├── scripts/             # backup.js, restore.js
+│   │   ├── src/
+│   │   │   ├── common/          # auth, db, metrics, stateMachine, openapi
+│   │   │   ├── modules/         # auth, orders, kitchen, admin, menu…
+│   │   │   └── realtime/        # socket.io
+│   │   └── tests/               # Vitest + Supertest
+│   └── web/
+│       ├── public/
+│       ├── nginx.conf
+│       └── src/
+│           ├── pages/           # Login, Office, Kitchen, Admin
+│           ├── components/      # SearchResults, LoadStates…
+│           └── lib/             # api, auth, socket
+├── backups/                     # SQLite yedekleri
+├── bruno/                       # API örnekleri
+├── docs/                        # ek dokümantasyon (opsiyonel)
+├── images/                      # README ekran görüntüleri
+├── docker-compose.yml           # development
+├── docker-compose.prod.yml      # production
+├── Dockerfile                   # multi-stage: api + web
+└── README.md
+```
 
 ---
 
 ## Kurulum
 
+### 1. Bağımlılıklar
+
 ```bash
 npm install
-cp .env.example .env   # JWT_SECRET, DATABASE_URL, CORS_ORIGIN
-npm run db:setup       # migrate deploy + seed
-npm run dev:api        # http://localhost:4000
-npm run dev:web        # http://localhost:5173
+cp .env.example .env
 ```
 
-Demo kullanıcılar (şifre `123456`): `admin`, `mutfak`, `yusuf`, `ahmet`, `mehmet`, `murat`, `veli`
+`.env` içinde en azından `JWT_SECRET`, `DATABASE_URL` ve `CORS_ORIGIN` tanımlayın.
 
-Girişte **Beni hatırla** (varsayılan açık) → 7 gün JWT; kapalıysa `sessionStorage` + 1 gün token.
-
----
-
-## Mimari
-
-```
-Controller → Domain → Repository
-PresenceService → MemoryPresenceProvider
-NotificationService → SocketAdapter (+ genişletilebilir)
-State Machine → session / ticket transitions
-SessionEvent + AuditLog + requestId
-```
-
-Mevcut mimari korunur: Express, React PWA, Prisma, Socket.io, State Machine, SessionEvent, NotificationService, PresenceService, Repository/Domain.
-
-### Klasör yapısı
-
-```
-apps/
-  api/
-    prisma/           schema + migrations + seed
-    scripts/          backup.js, restore.js
-    src/
-      common/         auth, db, metrics, stateMachine, openapi…
-      modules/        auth, orders, kitchen, admin, menu, notifications, announcements, presence, system
-      realtime/       socket.io
-    tests/            Vitest + Supertest
-  web/
-    src/pages/        Office, Kitchen, Admin, Login
-    src/components/   SearchResults, LoadStates, …
-bruno/                API örnekleri
-backups/              SQLite yedekleri
-docker-compose.yml          development
-docker-compose.prod.yml     production
-Dockerfile                  multi-stage (api + web)
-```
-
----
-
-## API
-
-| Endpoint | Açıklama |
-| -------- | -------- |
-| `GET /health` | DB + socket durumu, uptime |
-| `GET /version` | sürüm, env, node, db tipi |
-| `GET /metrics` | Prometheus metrikleri |
-| `POST /auth/login` | `remember` opsiyonel |
-| `GET /auth/me` | JWT doğrulama |
-| Sessions | aç / line / leave / confirm / events / presence |
-| Kitchen | tickets list + status patch |
-| Admin | offices, users, menu, settings, logs, dashboard, search |
-| Announcements | active + admin CRUD |
-| Notifications | list + read-all |
-
-Swagger UI: `GET /docs` — **yalnızca development** (`NODE_ENV !== production`).
-
-Bruno: `bruno/health-login.bru`
-
----
-
-## Socket eventleri
-
-| Event | Kim yayınlar | Kim dinler |
-| ----- | ------------ | ---------- |
-| `session:opened` | API | Office |
-| `session:updated` | API | Office |
-| `session:sent` / `session:closed` | API | Office |
-| `kitchen:new_ticket` | API | Kitchen / Admin |
-| `kitchen:updated` | API | Kitchen / Office / Admin |
-| `presence:update` | API | Office / Admin |
-| `notification:new` | API | User |
-| `announcement:updated` | API | Office / Kitchen / Admin |
-| `connected` | API | Client |
-
----
-
-## Environment Variables
-
-| Değişken | Zorunlu | Açıklama |
-| -------- | ------- | -------- |
-| `JWT_SECRET` | Prod: **evet** | Güçlü secret; prod’da zayıf/varsayılan değerlerle boot reddedilir |
-| `DATABASE_URL` | evet | Örn. `file:./dev.db` |
-| `CORS_ORIGIN` | önerilir | Örn. `http://localhost:5173` |
-| `PORT` | hayır | Varsayılan `4000` |
-| `NODE_ENV` | prod | `production` |
-| `GIT_COMMIT` / `BUILD_DATE` | hayır | `/version` için |
-| `VITE_API_URL` | web build | Production API URL |
-
----
-
-## Migration
-
-`db push` kaldırıldı. Schema değişiklikleri migration ile ilerler.
-
-**Development**
-
-```bash
-npm run db:migrate:dev -w apps/api
-# veya
-cd apps/api && npx prisma migrate dev
-```
-
-**Production / CI**
-
-```bash
-npm run db:migrate
-# prisma migrate deploy && prisma generate
-```
-
-İlk kurulum + seed:
+### 2. Veritabanı
 
 ```bash
 npm run db:setup
 ```
 
-Mevcut `db push` ile oluşmuş bir SQLite için (bir kez):
+Bu komut `prisma migrate deploy`, `prisma generate` ve seed çalıştırır.
+
+**Development schema değişikliği:**
 
 ```bash
-cd apps/api
-npx prisma migrate resolve --applied 20260727100000_init
+npm run db:migrate:dev
 ```
+
+**Production / CI:**
+
+```bash
+npm run db:migrate
+```
+
+> Eski `db push` ile oluşmuş SQLite için bir kez:  
+> `cd apps/api && npx prisma migrate resolve --applied 20260727100000_init`
+
+### 3. Geliştirme sunucuları
+
+```bash
+npm run dev:api   # http://localhost:4000
+npm run dev:web   # http://localhost:5173
+```
+
+Girişte **Beni hatırla** (varsayılan açık) → 7 gün JWT; kapalıysa `sessionStorage` + 1 gün token.
 
 ---
 
@@ -151,9 +204,11 @@ npx prisma migrate resolve --applied 20260727100000_init
 docker compose up
 ```
 
-### Production
+- Web: http://localhost:5173  
+- API: http://localhost:4000  
+- Seed + hot reload
 
-`.env` içinde güçlü `JWT_SECRET` tanımlayın:
+### Production
 
 ```bash
 export JWT_SECRET='uzun-rastgele-secret'
@@ -163,90 +218,242 @@ export VITE_API_URL='https://api.siparis.ornek.com'
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
-- Multi-stage `Dockerfile`: `api` (Node) + `web` (nginx)
-- Production image: `NODE_ENV=production`, migrate deploy on start
-- Development compose seed kullanır; production compose seed çalıştırmaz
+| Özellik | Development | Production |
+| ------- | ----------- | ---------- |
+| Image | Node bind-mount | Multi-stage (`api` + nginx `web`) |
+| `NODE_ENV` | development | `production` |
+| `JWT_SECRET` | `docker-dev-secret` | **zorunlu / güçlü** |
+| Seed | çalışır | çalışmaz |
+| Migrate | `db:setup` | container start: `migrate deploy` |
+| Swagger `/docs` | açık | kapalı |
 
 ---
 
-## Production Deployment
+## Demo Hesapları
 
-1. Güçlü `JWT_SECRET` (zorunlu)
-2. `CORS_ORIGIN` gerçek origin
-3. HTTPS (PWA)
-4. `npm run db:migrate` veya compose start
-5. Seed’i production’da çalıştırmayın (demo şifreler)
-6. `/docs` kapalı (production)
-7. `/health`, `/version`, `/metrics` izleme
-8. Tek API instance veya ileride Redis presence/adapter
+| Kullanıcı | Rol | Ofis |
+| --------- | --- | ---- |
+| `admin` | Admin | — |
+| `mutfak` | Kitchen | — |
+| `yusuf` | Office User | Teknik Ofis |
+| `ahmet` | Office User | Teknik Ofis |
+| `mehmet` | Office User | Teknik Ofis |
+| `murat` | Office User | Operasyon Ofisi |
+| `veli` | Office User | Operasyon Ofisi |
+
+**Şifre (tümü):** `123456`
+
+> **Uyarı:** Demo hesaplar ve seed yalnızca yerel/geliştirme içindir. Production ortamında kullanılmamalıdır.
 
 ---
 
-## Backup / Restore
+## Roller
 
-```bash
-npm run backup
-# → backups/backup-YYYY-MM-DD-HH-mm.db
+| Rol | Yetkiler |
+| --- | -------- |
+| **Admin** | Ofis / kullanıcı / menü / ayar CRUD, dashboard, search, loglar, duyurular, presence; kitchen ticket yönetimi; tüm ofisleri görme |
+| **Kitchen** | Aktif ticket listesi; durum geçişleri (`preparing` → `ready` → `delivered`); canlı `kitchen:*` eventleri |
+| **Office User** | Kendi ofisinde sipariş açma, kalem ekleme/çıkarma, katılma/ayrılma; opener onaylama; ofis presence ve timeline |
 
-npm run restore -- backup-2026-07-27-10-00.db
-# veya mutlak yol
-npm run restore -- C:\path\to\backup.db
+---
+
+## Sipariş Akışı
+
+```mermaid
+sequenceDiagram
+  participant O as Ofis Kullanıcısı
+  participant API as Express API
+  participant S as Socket.io
+  participant K as Mutfak
+
+  O->>API: Sipariş aç (POST /sessions)
+  API->>S: session:opened / session:updated
+  S-->>O: Bildirim (ofis odası)
+  O->>API: Kalem ekle / güncelle
+  API->>S: session:updated
+  O->>API: Onayla (POST .../confirm)
+  API->>API: collecting → sent + KitchenTicket
+  API->>S: session:sent, kitchen:new_ticket
+  S-->>K: Yeni ticket
+  K->>API: preparing
+  API->>S: kitchen:updated
+  K->>API: ready
+  API->>S: kitchen:updated
+  K->>API: delivered
+  API->>S: kitchen:updated
 ```
 
-Provider arayüzü modülerdir:
+Özet:
 
-- `SqliteBackupProvider` / `SqliteRestoreProvider`
-- `PostgresBackupProvider` / `PostgresRestoreProvider` (stub — `pg_dump` / `pg_restore` ile genişletilir)
+```text
+Sipariş Aç → Bildirim → Katılım → Onay → Kitchen
+  → Hazırlanıyor → Hazır → Teslim
+```
 
-Restore öncesi mevcut DB `.pre-restore-<ts>` olarak yedeklenir.
-
----
-
-## Monitoring
-
-| Endpoint | Format |
-| -------- | ------ |
-| `/health` | JSON — database, socket, uptime |
-| `/version` | JSON — version, env, node, db |
-| `/metrics` | Prometheus text |
-
-Metrikler: `app_uptime_seconds`, `app_active_sessions`, `app_online_users`, `app_today_orders`, `app_today_tickets`, memory, CPU, `nodejs_eventloop_delay_mean_ms`, `http_requests_total`, `http_response_time_avg_ms`.
+Timeout: süre dolunca (ayarlara göre) mutfağa gönderilir veya oturum kapanır.
 
 ---
 
-## Testing
+## API
+
+| Grup | Endpoint | Açıklama |
+| ---- | -------- | -------- |
+| **Auth** | `POST /auth/login` | Giriş (`remember` opsiyonel) |
+| | `GET /auth/me` | JWT ile kullanıcı |
+| **Sessions** | `GET /sessions/active` | Aktif collecting oturum |
+| | `GET /sessions/presence` | Ofis presence |
+| | `POST /sessions` | Sipariş aç |
+| | `POST /sessions/:id/lines` | Kalem upsert / sil (`qty: 0`) |
+| | `POST /sessions/:id/leave` | Siparişten çık |
+| | `POST /sessions/:id/confirm` | Mutfağa gönder |
+| | `GET /sessions/:id/events` | Timeline |
+| **Kitchen** | `GET /kitchen/tickets` | Aktif ticketlar |
+| | `PATCH /kitchen/tickets/:id` | Durum güncelle |
+| **Notifications** | `GET /notifications` | Bildirim listesi |
+| | `POST /notifications/read-all` | Tümünü okundu |
+| **Admin** | `GET /admin/dashboard` | Kartlar + grafikler |
+| | `GET /admin/search?q=` | Global arama |
+| | `/admin/offices`, `/users`, `/menu-items`, `/settings`, `/logs`, `/presence` | Yönetim |
+| **Announcements** | `GET /announcements/active` | Aktif duyurular |
+| | CRUD `/announcements` | Admin |
+| **Menu / Settings** | `GET /menu`, `GET /menu/settings/public` | Menü + public ayarlar |
+| **System** | `GET /health` | Sağlık |
+| | `GET /version` | Sürüm bilgisi |
+| | `GET /metrics` | Prometheus |
+| **Docs** | `GET /docs`, `GET /openapi.json` | Swagger *(dev only)* |
+
+Bruno örnek: `bruno/health-login.bru`
+
+---
+
+## Socket Eventleri
+
+| Event | Publisher | Subscriber | Description |
+| ----- | --------- | ---------- | ----------- |
+| `connected` | API | Client | Bağlantı onayı |
+| `session:opened` | API | Office | Yeni sipariş oturumu |
+| `session:updated` | API | Office | Kalem / presence güncellemesi |
+| `session:sent` | API | Office | Mutfağa gönderildi |
+| `session:closed` | API | Office | Oturum kapandı |
+| `kitchen:new_ticket` | API | Kitchen / Admin | Yeni ticket |
+| `kitchen:updated` | API | Kitchen / Office / Admin | Ticket durumu |
+| `presence:update` | API | Office / Admin | Online kullanıcı listesi |
+| `notification:new` | API | User | Kullanıcı bildirimi |
+| `announcement:updated` | API | Office / Kitchen / Admin | Duyuru yenile |
+
+---
+
+## Ortam Değişkenleri
+
+`.env.example` özeti:
+
+| Değişken | Zorunlu | Örnek / Varsayılan | Açıklama |
+| -------- | ------- | ------------------ | -------- |
+| `PORT` | hayır | `4000` | API portu |
+| `NODE_ENV` | prod | `development` / `production` | Ortam |
+| `JWT_SECRET` | **prod: evet** | `change-me-in-production` | JWT imza; prod’da zayıf değer → boot reddedilir |
+| `DATABASE_URL` | evet | `file:./dev.db` | Prisma bağlantısı |
+| `CORS_ORIGIN` | önerilir | `http://localhost:5173` | İzinli origin |
+| `BUILD_DATE` | hayır | — | `/version` |
+| `GIT_COMMIT` | hayır | — | `/version` |
+| `VITE_API_URL` | web build | `http://localhost:4000` | Frontend API adresi |
+
+---
+
+## Test
 
 ```bash
 npm test
 npm run test:coverage
 ```
 
-Vitest + Supertest. Coverage: `apps/api/coverage/`.
+| | |
+| --- | --- |
+| **Araçlar** | Vitest + Supertest |
+| **Rapor** | `apps/api/coverage/` |
+| **Kapsam** | Auth, state machine, session (açma / 409 / line / confirm / timeout / race), kitchen + socket, NotificationService, Presence (multi-tab), metrics |
 
-Kapsanan alanlar: auth, state machine, session (açma/çift/line/confirm/timeout/race), kitchen + socket events, NotificationService, Presence (multi-tab).
+---
+
+## Monitoring
+
+| Endpoint | Format | İçerik |
+| -------- | ------ | ------ |
+| `GET /health` | JSON | `database`, `socket`, `uptime`, `version` — degraded ise `503` |
+| `GET /version` | JSON | sürüm, `NODE_ENV`, Node, DB tipi, commit |
+| `GET /metrics` | Prometheus text | uptime, active sessions, online users, today orders/tickets, memory, CPU, event loop delay, request count, avg response time |
+
+Örnek metrikler: `app_uptime_seconds`, `app_active_sessions`, `app_online_users`, `http_requests_total`, `nodejs_eventloop_delay_mean_ms`.
+
+---
+
+## Backup & Restore
+
+### Backup
+
+```bash
+npm run backup
+# → backups/backup-YYYY-MM-DD-HH-mm.db
+```
+
+### Restore
+
+```bash
+npm run restore -- backup-2026-07-27-10-00.db
+# veya mutlak yol
+npm run restore -- C:\path\to\backup.db
+```
+
+- Restore öncesi mevcut DB `.pre-restore-<timestamp>` olarak kopyalanır.
+- Provider arayüzü: `SqliteBackupProvider` / `SqliteRestoreProvider`
+- PostgreSQL için stub: `PostgresBackupProvider` / `PostgresRestoreProvider` (`pg_dump` / `pg_restore` ile genişletilir)
+
+---
+
+## Production Deployment
+
+### Özet adımlar
+
+1. Güçlü `JWT_SECRET` tanımlayın  
+2. `CORS_ORIGIN` ve `VITE_API_URL` production origin’leri  
+3. HTTPS (PWA zorunlu)  
+4. `prisma migrate deploy` (veya prod compose start)  
+5. Seed / demo kullanıcı **çalıştırmayın / silin**  
+6. `/health`, `/version`, `/metrics` izleyin  
+7. Periyodik `npm run backup`  
+
+### Production Checklist
+
+- [ ] HTTPS aktif (PWA)
+- [ ] `JWT_SECRET` güçlü ve env’de
+- [ ] `NODE_ENV=production`
+- [ ] `CORS_ORIGIN` doğru
+- [ ] `prisma migrate deploy` uygulandı
+- [ ] Seed production’da yok
+- [ ] Demo kullanıcılar kaldırıldı / şifreler değiştirildi
+- [ ] Swagger `/docs` kapalı (otomatik)
+- [ ] Backup cron / schedule
+- [ ] Restore prosedürü dokümante ve test edildi
+- [ ] `/health` + `/metrics` monitoring’e bağlı
+- [ ] Docker production compose kullanılıyor
+- [ ] `npm test` yeşil
+- [ ] Tek API process veya Redis presence planı
 
 ---
 
 ## Roadmap
 
-- Redis presence + Socket.IO adapter (multi-instance)
-- PostgreSQL + pg backup/restore
-- Category / stok
-- Mail / Teams / Slack notification adapters
-- NestJS (isteğe bağlı, mevcut mimariyi bozmadan)
+| Sürüm | Hedef |
+| ----- | ----- |
+| **v1.1** | Redis Presence + Socket.IO adapter (multi-instance) |
+| **v1.2** | PostgreSQL + `pg_dump` / `pg_restore` |
+| **v1.3** | Mail / Teams / Slack notification adapter’ları |
+| **v2.0** | Category, Stock, gelişmiş Analytics |
 
 ---
 
-## Production Checklist
+## Lisans
 
-- [ ] `JWT_SECRET` güçlü ve env’de
-- [ ] `NODE_ENV=production`
-- [ ] `CORS_ORIGIN` doğru
-- [ ] `prisma migrate deploy` çalıştı
-- [ ] Seed production’da yok
-- [ ] HTTPS + PWA
-- [ ] `/docs` kapalı
-- [ ] `/health` + `/metrics` izleniyor
-- [ ] `npm run backup` cron
-- [ ] `npm test` yeşil
-- [ ] Tek process veya Redis planı
+Bu proje Alfatek şirket içi kullanımı için geliştirilmiştir.
+
+**All Rights Reserved.**

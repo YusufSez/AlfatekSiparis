@@ -38,7 +38,10 @@ export default function LoginPage() {
     <div className="login-shell">
       <div className="login-bg" aria-hidden />
       <form className="login-card" onSubmit={onSubmit}>
-        <p className="brand">Ofis Sipariş</p>
+        <div className="login-brand">
+          <img src="/alfatek.png" alt="Alfatek" className="login-logo" width={72} height={72} />
+          <p className="brand">Alfatek Ofis Sipariş</p>
+        </div>
         <h1>Giriş yap</h1>
         <p className="muted">Çay, soda ve diğer siparişleri ofis olarak toplu yönetin.</p>
         {error && <div className="alert">{error}</div>}
