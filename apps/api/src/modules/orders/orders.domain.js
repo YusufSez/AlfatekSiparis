@@ -32,7 +32,7 @@ async function writeEvent(sessionId, type, actorId, payload, requestId) {
   });
 }
 
-async function notifyUsers(userIds, { title, body, event, payload }) {
+async function notifyUsers(userIds, { title, body, event, payload, url }) {
   const unique = [...new Set(userIds.filter(Boolean))];
   if (!unique.length) return;
   await prisma.userNotification.createMany({
@@ -51,6 +51,13 @@ async function notifyUsers(userIds, { title, body, event, payload }) {
       payload: { title, body, event, payload },
     });
   }
+  await notificationService.sendPushToUsers(unique, {
+    title,
+    body,
+    event,
+    url: url || '/',
+    tag: event || 'alfatek-notify',
+  });
 }
 
 export async function serializeSession(session) {
@@ -714,6 +721,22 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
     event: SocketEvents.KITCHEN_NEW,
     payload: ticketPayload,
     requestId: meta.requestId,
+  });
+
+  const kitchenPushBody = `${session.office.name}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`;
+  await notificationService.sendPushToRole('kitchen', {
+    title: 'Yeni mutfak siparişi',
+    body: kitchenPushBody,
+    url: '/kitchen',
+    event: SocketEvents.KITCHEN_NEW,
+    tag: `kitchen-${result.ticket.id}`,
+  });
+  await notificationService.sendPushToRole('admin', {
+    title: 'Yeni mutfak siparişi',
+    body: kitchenPushBody,
+    url: '/kitchen',
+    event: SocketEvents.KITCHEN_NEW,
+    tag: `kitchen-${result.ticket.id}`,
   });
 
   const officeUserIds = (

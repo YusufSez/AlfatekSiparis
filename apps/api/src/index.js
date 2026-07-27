@@ -6,6 +6,7 @@ import { createSocketServer } from './realtime/socket.js';
 import { restoreSessionTimers } from './modules/orders/orders.domain.js';
 import { logger } from './common/logger.js';
 import { setSocketRuntime } from './common/runtime.js';
+import { configureVapid } from './modules/notifications/push.service.js';
 
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
 const port = Number(process.env.PORT || 4000);
@@ -44,6 +45,7 @@ const io = createSocketServer(server, corsOrigin);
 setSocketRuntime(io);
 
 async function start() {
+  configureVapid();
   await restoreSessionTimers();
   server.listen(port, host, () => {
     logger.info(`API listening on ${host}:${port}`);
