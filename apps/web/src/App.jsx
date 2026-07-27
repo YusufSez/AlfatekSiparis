@@ -4,6 +4,7 @@ import LoginPage from './pages/LoginPage';
 import OfficePage from './pages/OfficePage';
 import KitchenPage from './pages/KitchenPage';
 import AdminPage from './pages/AdminPage';
+import ProfilePage from './pages/ProfilePage';
 
 function Guard({ roles, children }) {
   const { user, loading } = useAuth();
@@ -24,9 +25,14 @@ export default function App() {
 
   return (
     <Routes>
+      <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route
-        path="/login"
-        element={user ? <Navigate to="/" replace /> : <LoginPage />}
+        path="/profile"
+        element={
+          <Guard>
+            <ProfilePage />
+          </Guard>
+        }
       />
       <Route
         path="/office"

@@ -78,6 +78,8 @@ export default function AdminPage() {
   const [userRole, setUserRole] = useState('office_user');
   const [userFilter, setUserFilter] = useState('');
   const [logFilter, setLogFilter] = useState('');
+  const [logRange, setLogRange] = useState('all');
+  const [logCategory, setLogCategory] = useState('all');
   const [resetUser, setResetUser] = useState(null);
   const [resetPassword, setResetPassword] = useState('');
   const [editOffice, setEditOffice] = useState(null);
@@ -150,16 +152,29 @@ export default function AdminPage() {
 
   const filteredLogs = useMemo(() => {
     const q = logFilter.trim().toLowerCase();
-    if (!q) return logs;
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
     return logs.filter((l) => {
+      const t = new Date(l.createdAt).getTime();
+      if (logRange === 'today' && now - t > day) return false;
+      if (logRange === 'week' && now - t > 7 * day) return false;
+      if (logRange === 'month' && now - t > 30 * day) return false;
+
+      const action = l.action || '';
+      if (logCategory === 'order' && !/session\.|ticket\.|kitchen\./.test(action)) return false;
+      if (logCategory === 'user' && !/user|auth\.|password/.test(action)) return false;
+      if (logCategory === 'admin' && !/^admin\.|^announcement\./.test(action)) return false;
+      if (logCategory === 'kitchen' && !/kitchen\.|ticket\./.test(action)) return false;
+
+      if (!q) return true;
       const actor = l.actor?.name || '';
       return (
-        l.action.toLowerCase().includes(q) ||
+        action.toLowerCase().includes(q) ||
         actor.toLowerCase().includes(q) ||
         JSON.stringify(l.payload || {}).toLowerCase().includes(q)
       );
     });
-  }, [logs, logFilter]);
+  }, [logs, logFilter, logRange, logCategory]);
 
   const enrichedLogs = useMemo(
     () =>
@@ -543,6 +558,8 @@ export default function AdminPage() {
                     {offices.map((o) => {
                       const open = expandedOffice === o.id;
                       const members = officeUsers(o.id);
+                      const onlineCount = members.filter((u) => onlineMap.get(u.id)).length;
+                      const hasActive = Boolean(o.activeCollectingSessionId);
                       return (
                         <article key={o.id} className={`office-panel ${open ? 'open' : ''}`}>
                           <button
@@ -552,8 +569,16 @@ export default function AdminPage() {
                             aria-expanded={open}
                           >
                             <span className="dot" style={{ background: o.color }} />
-                            <strong>{o.name}</strong>
-                            <Badge tone="secondary">{members.length} kişi</Badge>
+                            <span className="office-head-text">
+                              <strong>{o.name}</strong>
+                              <small className="muted">
+                                {members.length} kullanıcı · {onlineCount} online
+                                {hasActive ? ' · Aktif sipariş var' : ''}
+                              </small>
+                            </span>
+                            <Badge tone={hasActive ? 'warning' : 'secondary'}>
+                              {hasActive ? 'Aktif sipariş' : 'Boş'}
+                            </Badge>
                             <span className="chevron">{open ? '▾' : '▸'}</span>
                           </button>
                           {open && (
@@ -1019,13 +1044,48 @@ export default function AdminPage() {
 
             {tab === 'logs' && (
               <section className="admin-section">
-                <div className="toolbar-row">
+                <div className="toolbar-row filters-bar">
                   <input
                     className="filter-input"
                     value={logFilter}
                     onChange={(e) => setLogFilter(e.target.value)}
                     placeholder="Loglarda ara…"
                   />
+                  <div className="filter-chips">
+                    {[
+                      ['all', 'Tümü'],
+                      ['today', 'Bugün'],
+                      ['week', 'Bu Hafta'],
+                      ['month', 'Bu Ay'],
+                    ].map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`chip-btn ${logRange === id ? 'active' : ''}`}
+                        onClick={() => setLogRange(id)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="filter-chips">
+                    {[
+                      ['all', 'Hepsi'],
+                      ['order', 'Sipariş'],
+                      ['user', 'Kullanıcı'],
+                      ['admin', 'Admin'],
+                      ['kitchen', 'Kitchen'],
+                    ].map(([id, label]) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={`chip-btn ${logCategory === id ? 'active' : ''}`}
+                        onClick={() => setLogCategory(id)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                   <span className="muted">{enrichedLogs.length} kayıt</span>
                 </div>
                 {enrichedLogs.length === 0 ? (

@@ -63,6 +63,7 @@ export function publicUser(user) {
       ? { id: user.office.id, name: user.office.name, color: user.office.color }
       : null,
     active: user.active,
+    createdAt: user.createdAt || null,
   };
 }
 

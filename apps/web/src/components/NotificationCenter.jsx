@@ -61,28 +61,34 @@ export default function NotificationCenter() {
     <div className="notif-wrap" ref={wrapRef}>
       <button
         type="button"
-        className="btn ghost notif-btn"
+        className={`btn ghost notif-btn ${unread ? 'has-unread' : ''}`}
         aria-expanded={open}
         aria-haspopup="true"
         onClick={() => setOpen((o) => !o)}
       >
-        Bildirimler{unread ? ` (${unread})` : ''}
+        Bildirimler
+        {unread > 0 && <span className="notif-count">{unread}</span>}
       </button>
       {open && (
         <div className="notif-panel" role="dialog" aria-label="Bildirimler">
           <div className="notif-head">
             <strong>Bildirimler</strong>
-            <button type="button" className="linkish" onClick={markAll}>
+            <button type="button" className="btn ghost" onClick={markAll} disabled={!unread}>
               Tümünü okundu
             </button>
           </div>
           {items.length === 0 ? (
-            <p className="muted">Bildirim yok</p>
+            <p className="muted empty-mini">Bildirim yok</p>
           ) : (
-            <ul>
+            <ul className="notif-list">
               {items.slice(0, 20).map((n) => (
-                <li key={n.id} className={!n.readAt ? 'unread' : ''}>
-                  <strong>{n.title}</strong>
+                <li key={n.id} className={!n.readAt ? 'unread' : 'read'}>
+                  <div className="notif-item-top">
+                    <strong>{n.title}</strong>
+                    <span className={`notif-state ${n.readAt ? 'read' : 'unread'}`}>
+                      {n.readAt ? 'Okundu' : 'Yeni'}
+                    </span>
+                  </div>
                   <span>{n.body}</span>
                   <small>{new Date(n.createdAt).toLocaleString('tr-TR')}</small>
                 </li>

@@ -39,11 +39,13 @@ export default function LoginPage() {
       <div className="login-bg" aria-hidden />
       <form className="login-card" onSubmit={onSubmit}>
         <div className="login-brand">
-          <img src="/alfatek.png" alt="Alfatek" className="login-logo" width={72} height={72} />
-          <p className="brand">Alfatek Ofis Sipariş</p>
+          <img src="/alfatek.png" alt="Alfatek" className="login-logo" width={80} height={80} />
+          <p className="brand">Alfatek</p>
+          <h1>Ofis Sipariş Sistemi</h1>
+          <p className="muted login-lead">
+            Kurumsal ofis siparişlerinizi güvenli ve hızlı yönetin.
+          </p>
         </div>
-        <h1>Giriş yap</h1>
-        <p className="muted">Çay, soda ve diğer siparişleri ofis olarak toplu yönetin.</p>
         {error && <div className="alert">{error}</div>}
         <label>
           Kullanıcı adı
@@ -70,14 +72,11 @@ export default function LoginPage() {
             checked={remember}
             onChange={(e) => setRemember(e.target.checked)}
           />
-          Beni hatırla (7 gün)
+          Beni hatırla
         </label>
-        <button className="btn primary" disabled={busy} type="submit">
-          {busy ? 'Giriş…' : 'Giriş'}
+        <button className="btn primary xl" disabled={busy} type="submit">
+          {busy ? 'Giriş yapılıyor…' : 'Giriş yap'}
         </button>
-        {import.meta.env.DEV && (
-          <p className="hint">Demo: yusuf / mutfak / admin — şifre 123456</p>
-        )}
       </form>
     </div>
   );

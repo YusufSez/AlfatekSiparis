@@ -13,6 +13,7 @@ const ICON_META = {
 };
 
 const ACTION_MAP = [
+  { test: /^auth\.password_change$/, tone: 'warning', icon: '🔐', text: () => 'Şifresini değiştirdi' },
   { test: /^auth\.login$/, tone: 'info', icon: '🔑', text: () => 'Sisteme giriş yaptı' },
   { test: /^admin\.office_create$/, tone: 'success', icon: '🏢', text: (p) => `Yeni ofis oluşturdu${p?.name ? `: ${p.name}` : ''}` },
   { test: /^admin\.office_update$/, tone: 'info', icon: '🏢', text: () => 'Ofis bilgisini güncelledi' },

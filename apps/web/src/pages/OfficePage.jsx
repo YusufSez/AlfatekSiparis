@@ -252,21 +252,44 @@ export default function OfficePage() {
 
         {session && (
           <>
-            <section className={`session-banner mega ${urgent ? 'urgent' : ''}`}>
-              <div>
-                <p className="eyebrow">Aktif sipariş</p>
-                <h2>{session.openedBy.name} açtı</h2>
-                <p className="muted">
-                  Katılanlar:{' '}
-                  {session.participants.length
-                    ? session.participants.map((p) => p.name).join(', ')
-                    : 'Henüz kimse kalem eklemedi'}
+            <section className={`session-banner mega active-order-card ${urgent ? 'urgent' : ''}`}>
+              <div className="active-order-main">
+                <p className="eyebrow">Aktif Sipariş</p>
+                <h2>{session.openedBy.name} sipariş topluyor</h2>
+                <p className="active-order-timer-line">
+                  <strong>{label}</strong> kaldı
                 </p>
-                {session.pendingUsers?.length > 0 && (
-                  <p className="pending-inline">
-                    Bekleyenler: {session.pendingUsers.map((u) => u.name).join(', ')}
-                  </p>
-                )}
+                <div className="participant-boards">
+                  <div>
+                    <h4>Katılanlar</h4>
+                    <div className="participant-chips">
+                      {(session.participants || []).length === 0 && (
+                        <span className="muted">Henüz katılan yok</span>
+                      )}
+                      {(session.participants || []).map((p) => (
+                        <span key={p.id} className="participant-chip joined">
+                          <span className="tick" aria-hidden>
+                            ✓
+                          </span>
+                          {p.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4>Henüz katılmayanlar</h4>
+                    <div className="participant-chips">
+                      {(session.pendingUsers || []).length === 0 && (
+                        <span className="muted">Herkes katıldı</span>
+                      )}
+                      {(session.pendingUsers || []).map((u) => (
+                        <span key={u.id} className="participant-chip pending">
+                          {u.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
               <div className={`timer mega ${urgent ? 'pulse' : ''}`}>
                 <span>{label}</span>
@@ -274,33 +297,57 @@ export default function OfficePage() {
               </div>
             </section>
 
-            <section className="menu-grid">
-              {menu.map((item) => {
-                const qty = myQty[item.id] || 0;
-                return (
-                  <div key={item.id} className={`menu-card ${qty ? 'active' : ''}`}>
-                    <div className="menu-icon">{ICONS[item.icon] || ICONS.cup}</div>
-                    <div className="menu-name">{item.name}</div>
-                    <div className="qty-row">
-                      <button
-                        type="button"
-                        className="btn ghost"
-                        onClick={() => setQty(item.id, Math.max(0, qty - 1))}
-                      >
-                        −
-                      </button>
-                      <span className="qty">{qty}</span>
-                      <button
-                        type="button"
-                        className="btn ghost"
-                        onClick={() => setQty(item.id, qty + 1)}
-                      >
-                        +
-                      </button>
+            <section className="quick-order">
+              <h3>Hızlı Sipariş</h3>
+              <p className="muted tiny">Tek dokunuşla +1 ekler. Detay için aşağıdaki kartları kullanın.</p>
+              <div className="quick-order-grid">
+                {menu.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="quick-order-btn"
+                    onClick={() => setQty(item.id, (myQty[item.id] || 0) + 1)}
+                  >
+                    <span aria-hidden>{ICONS[item.icon] || ICONS.cup}</span>
+                    <strong>{item.name}</strong>
+                    {(myQty[item.id] || 0) > 0 && (
+                      <em>{myQty[item.id]}</em>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="menu-section">
+              <h3 className="section-heading">Menü</h3>
+              <div className="menu-grid">
+                {menu.map((item) => {
+                  const qty = myQty[item.id] || 0;
+                  return (
+                    <div key={item.id} className={`menu-card ${qty ? 'active' : ''}`}>
+                      <div className="menu-icon">{ICONS[item.icon] || ICONS.cup}</div>
+                      <div className="menu-name">{item.name}</div>
+                      <div className="qty-row">
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => setQty(item.id, Math.max(0, qty - 1))}
+                        >
+                          −
+                        </button>
+                        <span className="qty">{qty}</span>
+                        <button
+                          type="button"
+                          className="btn ghost"
+                          onClick={() => setQty(item.id, qty + 1)}
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
             </section>
 
             <section className="summary-panel">
