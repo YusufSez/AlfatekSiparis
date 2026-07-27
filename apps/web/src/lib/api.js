@@ -1,4 +1,26 @@
-const API_URL = import.meta.env.VITE_API_URL || '';
+/**
+ * Resolve API base URL for fetch + Socket.io.
+ * - Explicit VITE_API_URL wins (production builds / overrides).
+ * - In Vite DEV, use the page hostname + API port so phones on LAN work
+ *   (http://192.168.x.x:5173 → http://192.168.x.x:4000).
+ * - Otherwise empty string (same-origin / Vite proxy).
+ */
+export function resolveApiBaseUrl() {
+  const configured = String(import.meta.env.VITE_API_URL || '')
+    .trim()
+    .replace(/\/$/, '');
+  if (configured) return configured;
+
+  if (import.meta.env.DEV && typeof window !== 'undefined' && window.location?.hostname) {
+    const port = String(import.meta.env.VITE_API_PORT || '4000').trim() || '4000';
+    const { protocol, hostname } = window.location;
+    return `${protocol}//${hostname}:${port}`;
+  }
+
+  return '';
+}
+
+const API_URL = resolveApiBaseUrl();
 
 const TOKEN_KEY = 'token';
 const REMEMBER_KEY = 'remember_login';
@@ -33,7 +55,8 @@ export async function api(path, options = {}) {
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const base = resolveApiBaseUrl();
+  const res = await fetch(`${base}${path}`, {
     ...options,
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined,

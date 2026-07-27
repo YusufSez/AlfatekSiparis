@@ -22,7 +22,6 @@ enum SessionStatus {
 enum TicketStatus {
   new
   preparing
-  ready
   delivered
 }
 

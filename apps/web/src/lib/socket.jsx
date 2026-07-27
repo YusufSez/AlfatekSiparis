@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-import { API_URL, getToken } from './api';
+import { getToken, resolveApiBaseUrl } from './api';
 import { useAuth } from './auth';
 
 const SocketContext = createContext(null);
@@ -37,7 +37,7 @@ export function SocketProvider({ children }) {
       return;
     }
 
-    const s = io(API_URL || undefined, {
+    const s = io(resolveApiBaseUrl() || undefined, {
       auth: { token: getToken() },
       transports: ['websocket', 'polling'],
       reconnection: true,

@@ -12,9 +12,9 @@ router.get('/tickets', async (req, res, next) => {
   try {
     const status = req.query.status;
     const where =
-      status && ['new', 'preparing', 'ready', 'delivered'].includes(String(status))
+      status && ['new', 'preparing', 'delivered'].includes(String(status))
         ? { status: String(status) }
-        : { status: { in: ['new', 'preparing', 'ready'] } };
+        : { status: { in: ['new', 'preparing'] } };
 
     const take = Math.min(50, Math.max(1, Number(req.query.take) || 50));
     const tickets = await prisma.kitchenTicket.findMany({
@@ -32,7 +32,7 @@ router.get('/tickets', async (req, res, next) => {
 router.patch('/tickets/:id', async (req, res, next) => {
   try {
     const parsed = z
-      .object({ status: z.enum(['preparing', 'ready', 'delivered']) })
+      .object({ status: z.enum(['preparing', 'delivered']) })
       .safeParse(req.body);
     if (!parsed.success) throw httpError(400, 'Geçersiz durum');
     const ticket = await updateTicketStatus(

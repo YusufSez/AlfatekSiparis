@@ -2,6 +2,7 @@ import { Server } from 'socket.io';
 import { verifyToken } from '../common/auth.js';
 import { prisma } from '../common/db.js';
 import { logger } from '../common/logger.js';
+import { buildSocketCorsOrigin } from '../common/corsOrigin.js';
 import { notificationService } from '../modules/notifications/notification.service.js';
 import { presenceService } from '../modules/presence/presence.service.js';
 import { getPresenceForOffice } from '../modules/orders/orders.domain.js';
@@ -9,7 +10,11 @@ import { SocketEvents } from '../common/sessionEventType.js';
 
 export function createSocketServer(httpServer, corsOrigin) {
   const io = new Server(httpServer, {
-    cors: { origin: corsOrigin, methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] },
+    cors: {
+      origin: buildSocketCorsOrigin(corsOrigin),
+      methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
+      credentials: true,
+    },
   });
 
   notificationService.setSocket(io);

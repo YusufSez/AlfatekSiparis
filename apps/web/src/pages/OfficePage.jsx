@@ -44,8 +44,6 @@ function eventLabel(type, actor, payload) {
       return payload?.message || (payload?.reason === 'cancel' ? `${who} siparişi iptal etti` : 'Sipariş kapandı');
     case 'ticket.preparing':
       return 'Hazırlanıyor';
-    case 'ticket.ready':
-      return 'Hazır';
     case 'ticket.delivered':
       return 'Teslim edildi';
     default:
@@ -71,6 +69,8 @@ export default function OfficePage() {
   const [booting, setBooting] = useState(true);
   const [otherDraft, setOtherDraft] = useState('');
   const [otherOpen, setOtherOpen] = useState(false);
+  /** collecting | dispatching | collected | preparing | delivered | null */
+  const [orderPhase, setOrderPhase] = useState(null);
   const { label, urgent, remaining } = useCountdown(session?.endsAt);
 
   const load = useCallback(async () => {
@@ -83,6 +83,7 @@ export default function OfficePage() {
     setMenu(menuRes.items);
     setPresence(presenceRes.users || active.session?.presence || []);
     if (active.session) {
+      setOrderPhase('collecting');
       const ev = await api(`/sessions/${active.session.id}/events`);
       setEvents(ev.events);
     } else {
@@ -100,9 +101,19 @@ export default function OfficePage() {
   }, [load, reconnectKey]);
 
   useEffect(() => {
+    if (!session || remaining > 0) return;
+    setOrderPhase('dispatching');
+    const t = setTimeout(() => {
+      setOrderPhase((p) => (p === 'dispatching' ? 'collected' : p));
+    }, 1800);
+    return () => clearTimeout(t);
+  }, [session, remaining]);
+
+  useEffect(() => {
     const offs = [
       on('session:opened', (payload) => {
         setSession(payload);
+        setOrderPhase('collecting');
         notify('Yeni sipariş', `${payload.openedBy.name} sipariş açtı`);
       }),
       on('session:updated', (payload) => {
@@ -111,14 +122,18 @@ export default function OfficePage() {
           return;
         }
         setSession(payload);
+        setOrderPhase('collecting');
         if (payload?.presence) setPresence(payload.presence);
       }),
       on('session:sent', () => {
         setSession(null);
+        setOrderPhase('dispatching');
         notify('Sipariş gönderildi', 'Mutfağa iletildi');
+        setTimeout(() => setOrderPhase((p) => (p === 'dispatching' ? 'collected' : p)), 1600);
       }),
       on('session:closed', (payload) => {
         setSession(null);
+        setOrderPhase(null);
         const msg = payload?.events
           ? null
           : payload?.openedBy?.name
@@ -130,14 +145,20 @@ export default function OfficePage() {
         if (payload.officeId === user.officeId) setPresence(payload.users);
       }),
       on('kitchen:updated', (ticket) => {
-        if (ticket.officeId === user.officeId) {
-          const map = {
-            preparing: 'Sipariş hazırlanıyor',
-            ready: 'Sipariş hazır!',
-            delivered: 'Sipariş teslim edildi',
-          };
-          if (map[ticket.status]) notify(map[ticket.status], ticket.office.name);
+        if (ticket.officeId !== user.officeId) return;
+        if (ticket.status === 'preparing') {
+          setOrderPhase('preparing');
+          notify('Sipariş hazırlanıyor', ticket.office.name);
+        } else if (ticket.status === 'delivered') {
+          setOrderPhase('delivered');
+          notify('Sipariş teslim edildi', ticket.office.name);
+          setTimeout(() => setOrderPhase((p) => (p === 'delivered' ? null : p)), 12000);
+        } else if (ticket.status === 'new') {
+          setOrderPhase('collected');
         }
+      }),
+      on('kitchen:new_ticket', (ticket) => {
+        if (ticket.officeId === user.officeId) setOrderPhase('collected');
       }),
       on('notification:new', (n) => notify(n.title, n.body)),
     ];
@@ -168,12 +189,43 @@ export default function OfficePage() {
 
   const presenceList = presence.length ? presence : session?.presence || [];
 
+  const timerTone =
+    remaining > 0 && remaining <= 5
+      ? 'final'
+      : remaining > 0 && remaining <= 10
+        ? 'critical'
+        : remaining > 0 && remaining <= 30
+          ? 'warn'
+          : '';
+
+  const statusMeta = {
+    collecting: { icon: '🟡', title: 'Sipariş Toplanıyor', hint: 'Herkes seçimini yapsın' },
+    dispatching: { icon: '📤', title: 'Sipariş mutfağa gönderiliyor…', hint: 'Lütfen bekleyin' },
+    collected: { icon: '🟡', title: 'Sipariş Toplandı', hint: 'Mutfak sıraya aldı' },
+    preparing: { icon: '🍳', title: 'Mutfakta Hazırlanıyor', hint: 'Siparişiniz hazırlanıyor' },
+    delivered: { icon: '✅', title: 'Teslim Edildi', hint: 'Afiyet olsun' },
+  };
+
+  const activePhase = session ? (orderPhase === 'dispatching' ? 'dispatching' : 'collecting') : orderPhase;
+  const status = activePhase ? statusMeta[activePhase] : null;
+
+  const specialNotes = useMemo(() => {
+    if (!session?.summary) return [];
+    const notes = [];
+    for (const s of session.summary) {
+      if (!(s.icon === 'other' || String(s.name || '').toLocaleLowerCase('tr') === 'diğer')) continue;
+      for (const n of s.notes || []) notes.push(n);
+    }
+    return notes;
+  }, [session?.summary]);
+
   async function openSession() {
     setBusy(true);
     setError('');
     try {
       const data = await api('/sessions', { method: 'POST', body: {} });
       setSession(data.session);
+      setOrderPhase('collecting');
     } catch (err) {
       setError(err.message);
       if (err.data?.session) setSession(err.data.session);
@@ -263,6 +315,7 @@ export default function OfficePage() {
     try {
       await api(`/sessions/${session.id}/close`, { method: 'POST', body: {} });
       setSession(null);
+      setOrderPhase(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -287,6 +340,8 @@ export default function OfficePage() {
     try {
       await api(`/sessions/${session.id}/confirm`, { method: 'POST', body: {} });
       setSession(null);
+      setOrderPhase('dispatching');
+      setTimeout(() => setOrderPhase((p) => (p === 'dispatching' ? 'collected' : p)), 1600);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -334,33 +389,82 @@ export default function OfficePage() {
               ))}
             </section>
 
-            {!session && (
+            {!session && !status && (
               <EmptyState
                 icon="🧾"
                 title="Sipariş yok"
                 description="Ofisiniz için yeni bir toplu sipariş açın. Herkes anında bildirim alır."
                 action={
-                  <button className="btn primary xl" disabled={busy} onClick={openSession}>
+                  <button className="btn primary xl pressable" disabled={busy} onClick={openSession}>
                     Sipariş aç
                   </button>
                 }
               />
             )}
 
+            {!session && status && (
+              <section className={`office-status-card phase-${activePhase}`}>
+                <span className="office-status-icon" aria-hidden>
+                  {status.icon}
+                </span>
+                <div>
+                  <strong>{status.title}</strong>
+                  <p className="muted">{status.hint}</p>
+                </div>
+                {activePhase === 'delivered' || activePhase === 'collected' || activePhase === 'preparing' ? (
+                  <button className="btn primary pressable" disabled={busy} onClick={openSession}>
+                    Yeni sipariş aç
+                  </button>
+                ) : null}
+              </section>
+            )}
+
             {session && (
               <>
-                <section className={`session-banner mega active-order-card countdown-focus ${urgent ? 'urgent' : ''}`}>
+                <section
+                  className={`office-timer-section tone-${timerTone} ${urgent ? 'urgent' : ''} ${
+                    activePhase === 'dispatching' ? 'is-dispatching' : ''
+                  }`}
+                >
                   <p className="eyebrow">Aktif Sipariş</p>
                   <p className="session-opener muted">{session.openedBy.name} sipariş topluyor</p>
-                  <div className={`timer mega countdown-hero ${urgent ? 'pulse' : ''}`} aria-live="polite">
-                    <strong>{label}</strong>
-                    <small>{remaining === 0 ? 'Kapanıyor' : 'Kalan Süre'}</small>
+                  <div className="office-timer-slot">
+                    {activePhase === 'dispatching' ? (
+                      <div className="timer mega countdown-hero dispatching" aria-live="polite">
+                        <strong className="dispatch-text">Sipariş mutfağa gönderiliyor…</strong>
+                        <small>Lütfen bekleyin</small>
+                      </div>
+                    ) : (
+                      <div
+                        className={`timer mega countdown-hero tone-${timerTone} ${
+                          timerTone === 'final' ? 'pulse-final' : timerTone === 'critical' ? 'pulse' : ''
+                        }`}
+                        aria-live="polite"
+                      >
+                        <strong>{label}</strong>
+                        <small>{remaining === 0 ? 'Kapanıyor' : 'Kalan Süre'}</small>
+                      </div>
+                    )}
                   </div>
+                </section>
 
-                  <div className="participant-boards groups-3">
+                {status && (
+                  <section className={`office-status-card phase-${activePhase}`}>
+                    <span className="office-status-icon" aria-hidden>
+                      {status.icon}
+                    </span>
                     <div>
+                      <strong>{status.title}</strong>
+                      <p className="muted">{status.hint}</p>
+                    </div>
+                  </section>
+                )}
+
+                <section className="office-participants-section">
+                  <div className="participant-boards groups-3">
+                    <div className="participant-col">
                       <h4>🟢 Sipariş Verdi</h4>
-                      <div className="participant-chips">
+                      <div className="participant-chips scrollable">
                         {(session.participants || []).length === 0 && (
                           <span className="muted">Henüz yok</span>
                         )}
@@ -372,9 +476,9 @@ export default function OfficePage() {
                         ))}
                       </div>
                     </div>
-                    <div>
+                    <div className="participant-col">
                       <h4>🟡 İsteğim Yok</h4>
-                      <div className="participant-chips">
+                      <div className="participant-chips scrollable">
                         {(session.skippedUsers || []).length === 0 && (
                           <span className="muted">Henüz yok</span>
                         )}
@@ -387,9 +491,9 @@ export default function OfficePage() {
                         ))}
                       </div>
                     </div>
-                    <div>
+                    <div className="participant-col">
                       <h4>⚪ Henüz Cevap Vermedi</h4>
-                      <div className="participant-chips">
+                      <div className="participant-chips scrollable">
                         {(session.pendingUsers || []).length === 0 && (
                           <span className="muted">Herkes cevapladı</span>
                         )}
@@ -411,7 +515,7 @@ export default function OfficePage() {
                     {regularMenu.map((item) => {
                       const qty = myQty[item.id]?.qty || 0;
                       return (
-                        <div key={item.id} className={`quick-order-card tap-card ${qty ? 'has-qty' : ''}`}>
+                        <div key={item.id} className={`quick-order-card tap-card pressable ${qty ? 'has-qty' : ''}`}>
                           {qty > 0 && <span className="qo-badge">{qty}</span>}
                           {qty > 0 && (
                             <button
@@ -441,7 +545,7 @@ export default function OfficePage() {
                       );
                     })}
 
-                    <div className={`quick-order-card tap-card special skip-card ${mySkipped ? 'has-qty' : ''}`}>
+                    <div className={`quick-order-card tap-card special skip-card pressable ${mySkipped ? 'has-qty' : ''}`}>
                       <button
                         type="button"
                         className="quick-order-main"
@@ -459,7 +563,7 @@ export default function OfficePage() {
 
                     {otherItem && (
                       <div
-                        className={`quick-order-card tap-card special other-card ${myQty[otherItem.id]?.qty ? 'has-qty' : ''}`}
+                        className={`quick-order-card tap-card special other-card pressable ${myQty[otherItem.id]?.qty ? 'has-qty' : ''}`}
                       >
                         {(myQty[otherItem.id]?.qty || 0) > 0 && (
                           <span className="qo-badge">{myQty[otherItem.id].qty}</span>
@@ -512,7 +616,7 @@ export default function OfficePage() {
                         <button type="button" className="btn ghost" onClick={() => setOtherOpen(false)}>
                           Vazgeç
                         </button>
-                        <button type="button" className="btn primary" onClick={saveOther}>
+                        <button type="button" className="btn primary pressable" onClick={saveOther}>
                           Kaydet
                         </button>
                       </div>
@@ -530,15 +634,25 @@ export default function OfficePage() {
                         <li key={s.menuItemId}>
                           <span aria-hidden>{iconMeta(s.icon).emoji}</span>
                           <strong>{s.qty}×</strong> {s.name}
-                          {s.notes?.length > 0 && (
-                            <span className="muted tiny">
-                              {' '}
-                              ({s.notes.map((n) => `${n.userName}: ${n.note}`).join('; ')})
-                            </span>
-                          )}
                         </li>
                       ))}
                     </ul>
+                  )}
+                  {specialNotes.length > 0 && (
+                    <div className="special-notes-box">
+                      <div className="special-notes-head">
+                        <span aria-hidden>📝</span>
+                        <strong>Özel İstek</strong>
+                      </div>
+                      <ul>
+                        {specialNotes.map((n, i) => (
+                          <li key={`${n.userName}-${i}`}>
+                            <span className="note-text">{n.note}</span>
+                            <span className="note-user">{n.userName}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                   <div className="detail-lines">
                     {session.lines.map((l) => (
@@ -569,16 +683,16 @@ export default function OfficePage() {
 
                 <div className="cta-row sticky-cta">
                   {!isOpener && myHasLines && (
-                    <button className="btn ghost xl" disabled={busy} onClick={leave}>
+                    <button className="btn ghost xl pressable" disabled={busy} onClick={leave}>
                       Siparişten çık
                     </button>
                   )}
                   {isOpener ? (
                     <>
-                      <button className="btn ghost xl danger-ghost" disabled={busy} onClick={closeSession}>
+                      <button className="btn ghost xl danger-ghost pressable" disabled={busy} onClick={closeSession}>
                         Oturumu Kapat
                       </button>
-                      <button className="btn primary xl" disabled={busy} onClick={confirm}>
+                      <button className="btn primary xl pressable" disabled={busy} onClick={confirm}>
                         Mutfağa gönder
                       </button>
                     </>

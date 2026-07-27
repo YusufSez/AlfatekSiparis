@@ -179,8 +179,8 @@ export default function DashboardPage() {
               <dd>{offices.length}</dd>
             </div>
             <div>
-              <dt>Hazır (mutfak)</dt>
-              <dd>{kitchenStats.ready}</dd>
+              <dt>Hazırlanan (mutfak)</dt>
+              <dd>{kitchenStats.preparing}</dd>
             </div>
           </dl>
         </section>

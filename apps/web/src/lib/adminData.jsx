@@ -18,7 +18,7 @@ export function AdminDataProvider({ children }) {
   const [dashboard, setDashboard] = useState(null);
   const [announcements, setAnnouncements] = useState([]);
   const [pendingKitchen, setPendingKitchen] = useState(0);
-  const [kitchenStats, setKitchenStats] = useState({ waiting: 0, preparing: 0, ready: 0 });
+  const [kitchenStats, setKitchenStats] = useState({ waiting: 0, preparing: 0 });
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState('');
   const [apiMeta, setApiMeta] = useState(null);
@@ -48,7 +48,6 @@ export function AdminDataProvider({ children }) {
     setKitchenStats({
       waiting: tickets.filter((t) => t.status === 'new').length,
       preparing: tickets.filter((t) => t.status === 'preparing').length,
-      ready: tickets.filter((t) => t.status === 'ready').length,
     });
     setError('');
   }, []);

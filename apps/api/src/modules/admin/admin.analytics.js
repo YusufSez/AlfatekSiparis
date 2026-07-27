@@ -69,7 +69,7 @@ export async function getDashboardStats() {
 
   const prepEvents = await prisma.sessionEvent.findMany({
     where: {
-      type: { in: ['ticket.preparing', 'ticket.ready', 'ticket.delivered'] },
+      type: { in: ['ticket.preparing', 'ticket.delivered'] },
       createdAt: { gte: daysAgo(7) },
     },
     select: { sessionId: true, type: true, createdAt: true },
@@ -77,13 +77,12 @@ export async function getDashboardStats() {
     take: 1000,
   });
 
-  /** SessionEvent zamanlarına göre hazırlanma süresi (sent → ready/delivered) */
+  /** SessionEvent zamanlarına göre hazırlanma süresi (sent → delivered) */
   const bySession = new Map();
   for (const ev of prepEvents) {
     if (!bySession.has(ev.sessionId)) bySession.set(ev.sessionId, {});
     const row = bySession.get(ev.sessionId);
     if (ev.type === 'ticket.preparing' && !row.preparingAt) row.preparingAt = ev.createdAt;
-    if (ev.type === 'ticket.ready' && !row.readyAt) row.readyAt = ev.createdAt;
     if (ev.type === 'ticket.delivered' && !row.deliveredAt) row.deliveredAt = ev.createdAt;
   }
 
@@ -99,7 +98,7 @@ export async function getDashboardStats() {
   const prepMinutes = [];
   for (const [sessionId, times] of bySession) {
     const start = sentAt.get(sessionId) || times.preparingAt;
-    const end = times.readyAt || times.deliveredAt;
+    const end = times.deliveredAt;
     if (!start || !end) continue;
     const mins = (new Date(end) - new Date(start)) / 60000;
     if (mins >= 0 && mins < 240) prepMinutes.push(mins);

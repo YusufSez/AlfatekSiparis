@@ -15,7 +15,8 @@ export function ToastProvider({ children }) {
     (tone, message, opts = {}) => {
       const id = ++toastId;
       const ttl = opts.ttl ?? 3200;
-      setToasts((prev) => [...prev.slice(-4), { id, tone, message }]);
+      const action = opts.action || null;
+      setToasts((prev) => [...prev.slice(-4), { id, tone, message, action }]);
       if (ttl > 0) {
         setTimeout(() => dismiss(id), ttl);
       }
@@ -42,10 +43,24 @@ export function ToastProvider({ children }) {
       <div className="toast-stack" aria-live="polite" aria-relevant="additions">
         {toasts.map((t) => (
           <div key={t.id} className={`app-toast tone-${t.tone}`} role="status">
-            <span>{t.message}</span>
-            <button type="button" className="toast-close" onClick={() => dismiss(t.id)} aria-label="Kapat">
-              ✕
-            </button>
+            <span className="toast-msg">{t.message}</span>
+            <div className="toast-actions">
+              {t.action && (
+                <button
+                  type="button"
+                  className="toast-action"
+                  onClick={() => {
+                    t.action.onClick?.();
+                    dismiss(t.id);
+                  }}
+                >
+                  {t.action.label}
+                </button>
+              )}
+              <button type="button" className="toast-close" onClick={() => dismiss(t.id)} aria-label="Kapat">
+                ✕
+              </button>
+            </div>
           </div>
         ))}
       </div>

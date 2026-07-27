@@ -71,10 +71,9 @@ const ACTION_MAP = [
         : 'sipariş oturumunu kapattı.',
   },
   { test: /^kitchen\.preparing$/, tone: 'info', icon: '🔵', text: () => 'siparişi hazırlamaya başladı.' },
-  { test: /^kitchen\.ready$/, tone: 'success', icon: '🟢', text: () => 'siparişi hazır olarak işaretledi.' },
   { test: /^kitchen\.delivered$/, tone: 'secondary', icon: '🟣', text: () => 'siparişi teslim etti.' },
   { test: /^ticket\.preparing$/, tone: 'info', icon: '🔵', text: () => 'Mutfak siparişi hazırlamaya başladı.' },
-  { test: /^ticket\.ready$/, tone: 'success', icon: '🟢', text: () => 'Sipariş hazır.' },
+  { test: /^ticket\.ready$/, tone: 'secondary', icon: '⚪', text: () => 'Sipariş hazır (eski kayıt).' },
   { test: /^ticket\.delivered$/, tone: 'secondary', icon: '🟣', text: () => 'Sipariş teslim edildi.' },
 ];
 

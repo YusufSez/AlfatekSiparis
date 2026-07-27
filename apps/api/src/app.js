@@ -8,6 +8,7 @@ import { errorHandler } from './common/errors.js';
 import { openApiSpec } from './common/openapi.js';
 import { logger } from './common/logger.js';
 import { metricsMiddleware, renderPrometheusMetrics } from './common/metrics.js';
+import { buildCorsOriginOption } from './common/corsOrigin.js';
 import authRoutes from './modules/auth/auth.controller.js';
 import sessionRoutes from './modules/orders/orders.controller.js';
 import kitchenRoutes from './modules/kitchen/kitchen.controller.js';
@@ -29,8 +30,12 @@ export function createApp(corsOrigin) {
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     })
   );
-  app.use(cors({ origin: corsOrigin, credentials: true }));
-  app.use(express.json({ limit: '100kb' }));
+  app.use(
+    cors({
+      origin: buildCorsOriginOption(corsOrigin),
+      credentials: true,
+    })
+  );  app.use(express.json({ limit: '100kb' }));
   app.use(requestIdMiddleware);
   app.use(metricsMiddleware);
 

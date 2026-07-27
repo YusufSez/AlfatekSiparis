@@ -190,11 +190,66 @@ npm run db:migrate
 ### 3. Geliştirme sunucuları
 
 ```bash
-npm run dev:api   # http://localhost:4000
-npm run dev:web   # http://localhost:5173
+npm run dev:api   # 0.0.0.0:4000 — Local + Network URL terminalde
+npm run dev:web   # --host :5173 — Local + Network URL terminalde
 ```
 
 Girişte **Beni hatırla** (varsayılan açık) → 7 gün JWT; kapalıysa `sessionStorage` + 1 gün token.
+
+---
+
+## Telefondan Test
+
+Aynı Wi-Fi üzerindeki telefonlardan geliştirme sunucusunu test etmek için:
+
+### 1. Bilgisayarda sunucuları başlatın
+
+```bash
+npm run dev:api
+npm run dev:web
+```
+
+Vite terminalinde benzer çıktı görünür:
+
+```text
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.1.42:5173/
+```
+
+API terminalinde:
+
+```text
+Local   http://localhost:4000
+Network http://192.168.1.42:4000
+```
+
+### 2. Telefonda Network URL’yi açın
+
+Örnek: `http://192.168.1.42:5173`
+
+Frontend development’ta API adresini **otomatik** üretir (`sayfa hostname` + port `4000`).  
+`apps/web/.env` içinde `VITE_API_URL` boş bırakılmalıdır (veya `apps/web/.env.local.example` dosyasına bakın).
+
+### 3. Windows Güvenlik Duvarı
+
+İlk erişimde Windows, Node.js için ağ izni isteyebilir — **özel ağlarda izin verin**.  
+Manuel: Gelen kurallarında TCP **5173** ve **4000** portlarını açın.
+
+### 4. Kontrol listesi
+
+| Kontrol | |
+| --- | --- |
+| Telefon ve PC aynı Wi-Fi’de | ✓ |
+| Vite `Network` URL telefon tarayıcısında | ✓ |
+| API `0.0.0.0` dinliyor (`HOST` varsayılan) | ✓ |
+| CORS development’ta LAN `*:5173` origin’lerine açık | ✓ |
+| Socket.io aynı host:4000 | ✓ |
+
+Sorun olursa:
+
+1. PC’de `http://<LAN-IP>:4000/health` telefon tarayıcısından açılabiliyor mu?
+2. `VITE_API_URL=http://localhost:4000` sabitse kaldırın / boşaltın (telefonda localhost telefona gider).
+3. VPN / misafir Wi-Fi cihazlar arası izolasyonu kapatın.
 
 ---
 
@@ -352,13 +407,15 @@ Bruno örnek: `bruno/health-login.bru`
 | Değişken | Zorunlu | Örnek / Varsayılan | Açıklama |
 | -------- | ------- | ------------------ | -------- |
 | `PORT` | hayır | `4000` | API portu |
+| `HOST` | hayır | `0.0.0.0` | API bind adresi (LAN için `0.0.0.0`) |
 | `NODE_ENV` | prod | `development` / `production` | Ortam |
 | `JWT_SECRET` | **prod: evet** | `change-me-in-production` | JWT imza; prod’da zayıf değer → boot reddedilir |
 | `DATABASE_URL` | evet | `file:./dev.db` | Prisma bağlantısı |
-| `CORS_ORIGIN` | önerilir | `http://localhost:5173` | İzinli origin |
+| `CORS_ORIGIN` | önerilir | `http://localhost:5173` | İzinli origin (virgülle çoklu); **dev’de LAN Vite origin’leri otomatik** |
 | `BUILD_DATE` | hayır | — | `/version` |
 | `GIT_COMMIT` | hayır | — | `/version` |
-| `VITE_API_URL` | web build | `http://localhost:4000` | Frontend API adresi |
+| `VITE_API_URL` | web build | *(dev’de boş = otomatik hostname:4000)* | Frontend API adresi |
+| `VITE_API_PORT` | hayır | `4000` | Dev otomatik API portu |
 
 ---
 

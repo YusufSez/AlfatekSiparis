@@ -7,7 +7,6 @@ export const SessionEventType = Object.freeze({
   SENT: 'session.sent',
   CLOSED: 'session.closed',
   PREPARING: 'ticket.preparing',
-  READY: 'ticket.ready',
   DELIVERED: 'ticket.delivered',
 });
 

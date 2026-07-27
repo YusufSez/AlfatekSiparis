@@ -4,8 +4,9 @@ const SESSION_TRANSITIONS = {
 
 const TICKET_TRANSITIONS = {
   new: ['preparing'],
-  preparing: ['ready'],
-  ready: ['delivered'],
+  preparing: ['delivered'],
+  /** UX undo within short window after deliver */
+  delivered: ['preparing'],
 };
 
 export function canTransition(machine, from, to) {

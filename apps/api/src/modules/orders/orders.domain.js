@@ -738,17 +738,37 @@ export async function updateTicketStatus(user, ticketId, status, meta = {}) {
     include: { office: true, session: true },
   });
   if (!ticket) throw httpError(404, 'Sipariş bulunamadı');
-  assertTransition('ticket', ticket.status, status);
 
-  const updated = await prisma.kitchenTicket.update({
-    where: { id: ticketId },
+  // Idempotent: same status → return current ticket, no event/socket spam
+  if (ticket.status === status) {
+    return serializeTicket(ticket);
+  }
+
+  // Legacy rows: treat ready as preparing for transition checks
+  const fromStatus = ticket.status === 'ready' ? 'preparing' : ticket.status;
+  assertTransition('ticket', fromStatus, status);
+
+  const claimed = await prisma.kitchenTicket.updateMany({
+    where: { id: ticketId, status: ticket.status },
     data: { status },
+  });
+  if (claimed.count === 0) {
+    const latest = await prisma.kitchenTicket.findUnique({
+      where: { id: ticketId },
+      include: { office: true },
+    });
+    if (!latest) throw httpError(404, 'Sipariş bulunamadı');
+    if (latest.status === status) return serializeTicket(latest);
+    throw httpError(409, 'Sipariş durumu başka bir işlem tarafından değiştirildi');
+  }
+
+  const updated = await prisma.kitchenTicket.findUnique({
+    where: { id: ticketId },
     include: { office: true },
   });
 
   const typeMap = {
     preparing: SessionEventType.PREPARING,
-    ready: SessionEventType.READY,
     delivered: SessionEventType.DELIVERED,
   };
   const eventType = typeMap[status];
@@ -766,8 +786,7 @@ export async function updateTicketStatus(user, ticketId, status, meta = {}) {
   });
 
   const titles = {
-    preparing: 'Sipariş hazırlanıyor',
-    ready: 'Sipariş hazır',
+    preparing: ticket.status === 'delivered' ? 'Sipariş geri alındı' : 'Sipariş hazırlanıyor',
     delivered: 'Sipariş teslim edildi',
   };
   if (titles[status]) {
@@ -781,7 +800,7 @@ export async function updateTicketStatus(user, ticketId, status, meta = {}) {
       title: titles[status],
       body: ticket.office.name,
       event: eventType,
-      payload: { ticketId, status },
+      payload: { ticketId, status, undo: ticket.status === 'delivered' && status === 'preparing' },
     });
   }
 

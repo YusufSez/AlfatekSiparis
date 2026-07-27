@@ -40,7 +40,7 @@ describe('KITCHEN + SOCKET', () => {
     await new Promise((resolve) => server.close(resolve));
   });
 
-  it('kitchen preparing → ready → delivered + socket events', async () => {
+  it('kitchen preparing → delivered + socket events', async () => {
     const officeLogin = await loginAs(request(app), 'yusuf');
     const kitchenLogin = await loginAs(request(app), 'mutfak');
     const officeToken = officeLogin.body.token;
@@ -75,14 +75,6 @@ describe('KITCHEN + SOCKET', () => {
     expect(prep.body.ticket.status).toBe('preparing');
     expect((await updatedPromise).status).toBe('preparing');
 
-    const readyPromise = waitFor(kitchenSocket, 'kitchen:updated');
-    const ready = await request(app)
-      .patch(`/kitchen/tickets/${ticket.id}`)
-      .set(authHeader(kitchenToken))
-      .send({ status: 'ready' });
-    expect(ready.body.ticket.status).toBe('ready');
-    expect((await readyPromise).status).toBe('ready');
-
     const deliveredPromise = waitFor(kitchenSocket, 'kitchen:updated');
     const delivered = await request(app)
       .patch(`/kitchen/tickets/${ticket.id}`)
@@ -91,6 +83,20 @@ describe('KITCHEN + SOCKET', () => {
     expect(delivered.body.ticket.status).toBe('delivered');
     expect((await deliveredPromise).status).toBe('delivered');
 
+    const idempotent = await request(app)
+      .patch(`/kitchen/tickets/${ticket.id}`)
+      .set(authHeader(kitchenToken))
+      .send({ status: 'delivered' });
+    expect(idempotent.status).toBe(200);
+    expect(idempotent.body.ticket.status).toBe('delivered');
+
+    const invalid = await request(app)
+      .patch(`/kitchen/tickets/${ticket.id}`)
+      .set(authHeader(kitchenToken))
+      .send({ status: 'ready' });
+    expect(invalid.status).toBe(400);
+
     kitchenSocket.close();
   });
+
 });

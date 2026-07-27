@@ -64,6 +64,7 @@ export default defineConfig({
     }),
   ],
   server: {
+    host: true,
     port: 5173,
     proxy: {
       '/auth': 'http://localhost:4000',
@@ -83,6 +84,10 @@ export default defineConfig({
       '/version': 'http://localhost:4000',
       '/docs': 'http://localhost:4000',
       '/openapi.json': 'http://localhost:4000',
+      '/socket.io': {
+        target: 'http://localhost:4000',
+        ws: true,
+      },
     },
   },
 });
