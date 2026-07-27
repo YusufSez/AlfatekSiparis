@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
+import ActionMenu from '../../components/ui/ActionMenu';
 import OfficeDetailModal from '../../components/admin/OfficeDetailModal';
 import Modal from '../../components/Modal';
 import { EmptyState } from '../../components/LoadStates';
@@ -136,16 +137,26 @@ export default function OfficesPage() {
                   <dd className="tiny-dd">{formatDateTime(lastOrderAt)}</dd>
                 </div>
               </dl>
-              <div className="row-actions wrap">
+              <div className="row-actions wrap office-card-actions">
                 <Button variant="primary" onClick={() => openDetail(o.id)}>
                   Detay
                 </Button>
-                <Button variant="ghost" onClick={() => setEditOffice(o)}>
-                  Düzenle
-                </Button>
-                <Button variant="danger-ghost" onClick={() => deleteOffice(o)}>
-                  Sil
-                </Button>
+                <ActionMenu
+                  label={`${o.name} işlemleri`}
+                  items={[
+                    {
+                      id: 'edit',
+                      label: 'Düzenle',
+                      onSelect: () => setEditOffice(o),
+                    },
+                    {
+                      id: 'delete',
+                      label: 'Sil',
+                      tone: 'danger',
+                      onSelect: () => deleteOffice(o),
+                    },
+                  ]}
+                />
               </div>
             </article>
           ))}

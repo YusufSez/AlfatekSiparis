@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import DataTable from '../../components/ui/DataTable';
+import ActionMenu from '../../components/ui/ActionMenu';
 import Modal from '../../components/Modal';
 import { Badge } from '../../components/Badge';
 import { EmptyState, TableSkeleton } from '../../components/LoadStates';
@@ -142,21 +143,24 @@ export default function UsersPage() {
       key: 'actions',
       header: 'İşlemler',
       render: (u) => (
-        <div className="row-actions wrap">
-          <button type="button" className="btn ghost" onClick={() => toggleUser(u)}>
-            {u.active ? 'Pasifleştir' : 'Aktifleştir'}
-          </button>
-          <button
-            type="button"
-            className="btn ghost"
-            onClick={() => {
-              setResetUser(u);
-              setResetPassword('');
-            }}
-          >
-            Şifre sıfırla
-          </button>
-        </div>
+        <ActionMenu
+          label={`${u.name} işlemleri`}
+          items={[
+            {
+              id: 'toggle',
+              label: u.active ? 'Pasifleştir' : 'Aktifleştir',
+              onSelect: () => toggleUser(u),
+            },
+            {
+              id: 'reset',
+              label: 'Şifre sıfırla',
+              onSelect: () => {
+                setResetUser(u);
+                setResetPassword('');
+              },
+            },
+          ]}
+        />
       ),
     },
   ];

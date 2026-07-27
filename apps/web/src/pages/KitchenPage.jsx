@@ -334,7 +334,7 @@ export default function KitchenPage() {
         title="Mutfak"
         subtitle={connected ? 'Canlı' : 'Yeniden bağlanıyor…'}
         onLogout={logout}
-        accent="#c45c26"
+        accent="var(--accent-2)"
       />
 
       <main className="content kitchen-content">

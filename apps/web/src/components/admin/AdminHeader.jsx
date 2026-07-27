@@ -27,6 +27,7 @@ export default function AdminHeader({ breadcrumb = [], onSearch, searchValue, on
             aria-label="Admin arama"
           />
         </form>
+        <NotificationCenter />
         <button
           type="button"
           className="btn ghost theme-toggle"
@@ -35,7 +36,6 @@ export default function AdminHeader({ breadcrumb = [], onSearch, searchValue, on
         >
           {theme.isDark ? '☀' : '🌙'}
         </button>
-        <NotificationCenter />
         <Link to="/admin/profile" className="profile-chip admin-profile-chip" title="Profil">
           <span className="avatar" aria-hidden>
             {initials(user?.name)}

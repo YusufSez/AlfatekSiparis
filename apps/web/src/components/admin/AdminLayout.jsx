@@ -52,6 +52,9 @@ function AdminShellInner() {
 
   useEffect(() => {
     setMobileOpen(false);
+    const main = document.querySelector('.admin-main');
+    if (main) main.scrollTop = 0;
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
   }, [location.pathname]);
 
   const parts = location.pathname.split('/').filter(Boolean);

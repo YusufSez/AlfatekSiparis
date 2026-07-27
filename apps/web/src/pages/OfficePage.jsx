@@ -403,7 +403,7 @@ export default function OfficePage() {
             )}
 
             {!session && status && (
-              <section className={`office-status-card phase-${activePhase}`}>
+              <section className={`office-phase-card phase-${activePhase}`}>
                 <span className="office-status-icon" aria-hidden>
                   {status.icon}
                 </span>
@@ -449,7 +449,7 @@ export default function OfficePage() {
                 </section>
 
                 {status && (
-                  <section className={`office-status-card phase-${activePhase}`}>
+                  <section className={`office-phase-card phase-${activePhase}`}>
                     <span className="office-status-icon" aria-hidden>
                       {status.icon}
                     </span>

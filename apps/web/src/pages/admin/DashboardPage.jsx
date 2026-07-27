@@ -226,17 +226,25 @@ export default function DashboardPage() {
             <ul className="dash-announce-list">
               {activeAnnouncements.map((a) => (
                 <li key={a.id}>
-                  <Badge
-                    tone={
-                      a.severity === 'critical'
-                        ? 'danger'
+                  <div className="dash-announce-top">
+                    <span aria-hidden>📢</span>
+                    <Badge tone="info">Duyuru</Badge>
+                    <Badge
+                      tone={
+                        a.severity === 'critical'
+                          ? 'danger'
+                          : a.severity === 'warning'
+                            ? 'warning'
+                            : 'secondary'
+                      }
+                    >
+                      {a.severity === 'critical'
+                        ? 'Kritik'
                         : a.severity === 'warning'
-                          ? 'warning'
-                          : 'info'
-                    }
-                  >
-                    {a.severity}
-                  </Badge>
+                          ? 'Uyarı'
+                          : 'Bilgi'}
+                    </Badge>
+                  </div>
                   <strong>{a.title}</strong>
                   <p className="muted tiny">{a.body}</p>
                 </li>

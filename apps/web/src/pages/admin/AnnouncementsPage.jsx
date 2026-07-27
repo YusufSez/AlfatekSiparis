@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import { Badge } from '../../components/Badge';
@@ -6,11 +6,25 @@ import { EmptyState } from '../../components/LoadStates';
 import { api } from '../../lib/api';
 import { useAdminData } from '../../lib/adminData';
 import { useConfirm } from '../../lib/confirm';
+import { formatDateTime } from '../../lib/format';
+
+const SEV_LABEL = {
+  info: 'Bilgi',
+  warning: 'Uyarı',
+  critical: 'Kritik',
+};
 
 export default function AnnouncementsPage() {
-  const { announcements, refresh, notify } = useAdminData();
+  const { announcements, users, refresh, notify } = useAdminData();
   const { confirm } = useConfirm();
   const [busy, setBusy] = useState(false);
+  const [activeDraft, setActiveDraft] = useState(true);
+
+  const userMap = useMemo(() => {
+    const m = new Map();
+    for (const u of users || []) m.set(u.id, u.name);
+    return m;
+  }, [users]);
 
   async function createAnnouncement(e) {
     e.preventDefault();
@@ -28,14 +42,15 @@ export default function AnnouncementsPage() {
           title: fd.get('title'),
           body: fd.get('body'),
           severity: fd.get('severity'),
-          active: true,
+          active: activeDraft,
           startsAt,
           endsAt,
         },
       });
       e.target.reset();
+      setActiveDraft(true);
       await refresh();
-      notify.success('Duyuru yayınlandı');
+      notify.success(activeDraft ? 'Duyuru yayınlandı' : 'Duyuru taslak olarak kaydedildi');
     } catch (err) {
       notify.error(err.message);
     } finally {
@@ -71,49 +86,76 @@ export default function AnnouncementsPage() {
 
   return (
     <div className="admin-page-body">
-      <PageHeader title="Duyurular" description="Ofis ve mutfağa duyuru yayınlayın" />
+      <PageHeader
+        title="Duyurular"
+        description="Ofis ve mutfak ekranlarında belirgin duyuru bandı olarak yayınlanır"
+      />
 
-      <form className="stack-form card-form" onSubmit={createAnnouncement}>
-        <h3 className="form-title">Yeni duyuru</h3>
+      <form className="stack-form card-form announce-create-form" onSubmit={createAnnouncement}>
+        <div className="announce-form-head">
+          <span className="announce-form-ico" aria-hidden>
+            📢
+          </span>
+          <div>
+            <h3 className="form-title">Yeni duyuru</h3>
+            <p className="muted tiny">Kullanıcılar bunu “Duyuru” etiketiyle ayrı bir bantta görür.</p>
+          </div>
+        </div>
         <label>
           Başlık
-          <input name="title" required />
+          <input name="title" required placeholder="Örn. Bugün sipariş kapanışı" />
         </label>
         <label>
           Mesaj
-          <textarea name="body" rows={3} required />
+          <textarea
+            name="body"
+            rows={3}
+            required
+            placeholder="Örn. Bugün sipariş kapanışı 15:30'dur"
+          />
         </label>
         <label>
-          Önem
+          Önem seviyesi
           <select name="severity" defaultValue="info">
             <option value="info">Bilgi</option>
             <option value="warning">Uyarı</option>
             <option value="critical">Kritik</option>
           </select>
         </label>
+        <label className="check remember-row announce-active-row">
+          <input
+            type="checkbox"
+            checked={activeDraft}
+            onChange={(e) => setActiveDraft(e.target.checked)}
+          />
+          <span>Hemen aktif yayınla</span>
+        </label>
         <div className="form-grid-2">
           <label>
-            Başlangıç
+            Başlangıç (opsiyonel)
             <input name="startsAt" type="datetime-local" />
           </label>
           <label>
-            Bitiş
+            Bitiş (opsiyonel)
             <input name="endsAt" type="datetime-local" />
           </label>
         </div>
         <Button type="submit" variant="primary" loading={busy}>
-          Yayınla
+          {activeDraft ? 'Duyuruyu yayınla' : 'Taslak kaydet'}
         </Button>
       </form>
 
       {!announcements.length ? (
         <EmptyState icon="📢" title="Duyuru yok" description="Henüz yayınlanmış duyuru bulunmuyor." />
       ) : (
-        <ul className="admin-list">
+        <ul className="admin-list announce-admin-list">
           {announcements.map((a) => (
-            <li key={a.id}>
-              <div>
-                <div className="row-actions wrap" style={{ marginBottom: '0.35rem' }}>
+            <li key={a.id} className="announce-admin-item">
+              <div className="announce-admin-main">
+                <div className="announce-admin-top">
+                  <span className="announce-admin-ico" aria-hidden>
+                    📢
+                  </span>
                   <Badge
                     tone={
                       a.severity === 'critical'
@@ -123,14 +165,19 @@ export default function AnnouncementsPage() {
                           : 'info'
                     }
                   >
-                    {a.severity}
+                    {SEV_LABEL[a.severity] || a.severity}
                   </Badge>
                   <Badge tone={a.active ? 'success' : 'secondary'}>
                     {a.active ? 'Aktif' : 'Pasif'}
                   </Badge>
                 </div>
-                <strong>{a.title}</strong>
-                <div className="muted">{a.body}</div>
+                <strong className="announce-admin-title">{a.title}</strong>
+                <p className="announce-admin-body muted">{a.body}</p>
+                <div className="announce-admin-meta muted tiny">
+                  <span>Yayın: {formatDateTime(a.startsAt || a.createdAt)}</span>
+                  <span>·</span>
+                  <span>Oluşturan: {userMap.get(a.createdBy) || 'Yönetici'}</span>
+                </div>
               </div>
               <span className="row-actions wrap">
                 <Button variant="ghost" onClick={() => toggle(a)}>

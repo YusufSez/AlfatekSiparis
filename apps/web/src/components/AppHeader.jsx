@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import NotificationCenter from './NotificationCenter';
 import { useAuth } from '../lib/auth';
@@ -10,6 +11,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
   const theme = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
   const name = user?.name || '';
 
   const links = [];
@@ -21,6 +23,24 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
   if (user?.role === 'kitchen') links.push({ to: '/kitchen', label: 'Mutfak' });
   links.push({ to: '/profile', label: 'Profil' });
 
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    function onKey(e) {
+      if (e.key === 'Escape') setMenuOpen(false);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
   return (
     <header className="app-shell-header" style={accent ? { '--accent': accent } : undefined}>
       <div className="app-nav">
@@ -31,10 +51,10 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
           aria-label="Ana sayfa"
         >
           <img src="/alfatek.png" alt="" width={32} height={32} />
-          <span>Alfatek</span>
+          <span className="nav-brand-text">Alfatek</span>
         </button>
 
-        <nav className="nav-links" aria-label="Ana menü">
+        <nav className="nav-links nav-links-desktop" aria-label="Ana menü">
           {links.map((l) => (
             <NavLink
               key={l.to}
@@ -48,6 +68,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
         </nav>
 
         <div className="nav-actions">
+          <NotificationCenter />
           <button
             type="button"
             className="btn ghost theme-toggle"
@@ -57,8 +78,13 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
           >
             {theme.isDark ? '☀' : '🌙'}
           </button>
-          <NotificationCenter />
-          <div className="nav-user" title={`${name} · ${roleLabel(user?.role)}`}>
+          <button
+            type="button"
+            className="nav-user nav-user-btn"
+            title={`${name} · ${roleLabel(user?.role)}`}
+            aria-label="Profil"
+            onClick={() => navigate('/profile')}
+          >
             <span className="avatar" aria-hidden>
               {initials(name)}
             </span>
@@ -69,16 +95,76 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
                 {user?.office?.name ? ` · ${user.office.name}` : ''}
               </small>
             </span>
-          </div>
-          <button type="button" className="btn ghost" onClick={onLogout}>
+          </button>
+          <button type="button" className="btn ghost nav-logout-desktop" onClick={onLogout}>
             Çıkış
+          </button>
+          <button
+            type="button"
+            className="btn ghost nav-menu-btn"
+            aria-label={menuOpen ? 'Menüyü kapat' : 'Menüyü aç'}
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            {menuOpen ? '✕' : '☰'}
           </button>
         </div>
       </div>
 
+      {menuOpen && (
+        <>
+          <button
+            type="button"
+            className="nav-drawer-backdrop"
+            aria-label="Menüyü kapat"
+            onClick={() => setMenuOpen(false)}
+          />
+          <nav className="nav-drawer" aria-label="Mobil menü">
+            <div className="nav-drawer-top">
+              <div className="nav-drawer-user">
+                <span className="avatar" aria-hidden>
+                  {initials(name)}
+                </span>
+                <div>
+                  <strong>{name}</strong>
+                  <small className="muted">
+                    {roleLabel(user?.role)}
+                    {user?.office?.name ? ` · ${user.office.name}` : ''}
+                  </small>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn ghost nav-drawer-close"
+                aria-label="Menüyü kapat"
+                onClick={() => setMenuOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <div className="nav-drawer-links">
+              {links.map((l) => (
+                <NavLink
+                  key={l.to}
+                  to={l.to}
+                  className={({ isActive }) => `nav-drawer-link ${isActive ? 'active' : ''}`}
+                  end={!l.to.startsWith('/admin')}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  {l.label}
+                </NavLink>
+              ))}
+            </div>
+            <button type="button" className="btn ghost nav-drawer-logout" onClick={onLogout}>
+              Çıkış
+            </button>
+          </nav>
+        </>
+      )}
+
       {(title || subtitle) && location.pathname !== '/profile' && (
         <div className="page-title-row">
-          <div>
+          <div className="page-title-inner">
             {title && <h1>{title}</h1>}
             {subtitle && <p className="muted">{subtitle}</p>}
           </div>
