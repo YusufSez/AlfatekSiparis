@@ -1,0 +1,21 @@
+{
+  "name": "ofis-siparis",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --if-present",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "db:migrate": "npm run db:migrate -w apps/api",
+    "db:migrate:dev": "npm run db:migrate:dev -w apps/api",
+    "db:seed": "npm run db:seed -w apps/api",
+    "db:setup": "npm run db:setup -w apps/api",
+    "backup": "npm run backup -w apps/api",
+    "restore": "npm run restore -w apps/api",
+    "test": "npm run test -w apps/api",
+    "test:coverage": "npm run test:coverage -w apps/api"
+  }
+}

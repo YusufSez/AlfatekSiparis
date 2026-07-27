@@ -1,0 +1,13 @@
+node_modules
+.git
+**/dist
+**/coverage
+**/*.db
+**/*.db-journal
+backups
+.env
+apps/api/prisma/dev.db
+apps/api/prisma/test.db
+*.log
+.vite
+dev-dist

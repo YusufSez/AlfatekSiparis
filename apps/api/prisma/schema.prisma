@@ -1,0 +1,202 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  admin
+  office_user
+  kitchen
+}
+
+enum SessionStatus {
+  collecting
+  sent
+  closed
+}
+
+enum TicketStatus {
+  new
+  preparing
+  ready
+  delivered
+}
+
+model Office {
+  id                       String   @id @default(cuid())
+  name                     String   @unique
+  color                    String   @default("#1B6B4A")
+  activeCollectingSessionId String? @unique
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  users    User[]
+  sessions OrderSession[]
+  tickets  KitchenTicket[]
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  username     String   @unique
+  passwordHash String
+  role         Role     @default(office_user)
+  officeId     String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  office         Office?              @relation(fields: [officeId], references: [id])
+  openedSessions OrderSession[]       @relation("OpenedBy")
+  orderLines     OrderLine[]
+  auditLogs      AuditLog[]
+  sessionEvents  SessionEvent[]
+  notifications  UserNotification[]
+}
+
+model MenuItem {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  icon      String   @default("cup")
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orderLines OrderLine[]
+}
+
+model AppSetting {
+  id                 Int     @id @default(1)
+  sessionDurationSec Int     @default(120)
+  companyName        String  @default("Ofis Sipariş")
+  notificationSound  Boolean @default(true)
+  autoClose          Boolean @default(true)
+  workingHoursStart  String  @default("08:00")
+  workingHoursEnd    String  @default("19:00")
+  config             String  @default("{}")
+}
+
+model OrderSession {
+  id          String        @id @default(cuid())
+  officeId    String
+  openedById  String
+  status      SessionStatus @default(collecting)
+  endsAt      DateTime
+  confirmedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  office   Office          @relation(fields: [officeId], references: [id])
+  openedBy User            @relation("OpenedBy", fields: [openedById], references: [id])
+  lines    OrderLine[]
+  ticket   KitchenTicket?
+  events   SessionEvent[]
+
+  @@index([officeId, status])
+}
+
+model OrderLine {
+  id         String   @id @default(cuid())
+  sessionId  String
+  userId     String
+  menuItemId String
+  qty        Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  session  OrderSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user     User         @relation(fields: [userId], references: [id])
+  menuItem MenuItem     @relation(fields: [menuItemId], references: [id])
+
+  @@unique([sessionId, userId, menuItemId])
+}
+
+model KitchenTicket {
+  id          String       @id @default(cuid())
+  sessionId   String       @unique
+  officeId    String
+  status      TicketStatus @default(new)
+  summaryJson String
+  detailsJson String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  session OrderSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  office  Office       @relation(fields: [officeId], references: [id])
+
+  @@index([status, createdAt])
+}
+
+model SessionEvent {
+  id        String   @id @default(cuid())
+  sessionId String
+  actorId   String?
+  type      String
+  payload   String   @default("{}")
+  requestId String?
+  createdAt DateTime @default(now())
+
+  session OrderSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  actor   User?        @relation(fields: [actorId], references: [id])
+
+  @@index([sessionId, createdAt])
+  @@index([type])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  payload   String
+  ip        String?
+  userAgent String?
+  requestId String?
+  createdAt DateTime @default(now())
+
+  actor User? @relation(fields: [actorId], references: [id])
+
+  @@index([createdAt])
+  @@index([action])
+  @@index([requestId])
+}
+
+model UserNotification {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  body      String
+  event     String
+  payload   String   @default("{}")
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+enum AnnouncementSeverity {
+  info
+  warning
+  critical
+}
+
+model Announcement {
+  id        String                @id @default(cuid())
+  title     String
+  body      String
+  active    Boolean               @default(true)
+  severity  AnnouncementSeverity  @default(info)
+  startsAt  DateTime              @default(now())
+  endsAt    DateTime?
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+  createdBy String?
+
+  @@index([active, startsAt])
+}

@@ -1,0 +1,136 @@
+import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
+import request from 'supertest';
+import { getApp, resetDb, loginAs, authHeader, prisma } from './helpers.js';
+import { finalizeSession } from '../src/modules/orders/orders.domain.js';
+
+describe('SESSION', () => {
+  let app;
+  let fixtures;
+
+  beforeAll(() => {
+    app = getApp();
+  });
+
+  beforeEach(async () => {
+    fixtures = await resetDb();
+  });
+
+  async function token(user = 'yusuf') {
+    const res = await loginAs(request(app), user);
+    return res.body.token;
+  }
+
+  it('sipariş açma', async () => {
+    const t = await token();
+    const res = await request(app).post('/sessions').set(authHeader(t)).send({});
+    expect(res.status).toBe(201);
+    expect(res.body.session.status).toBe('collecting');
+    expect(res.body.session.officeId).toBe(fixtures.teknik.id);
+  });
+
+  it('aynı ofiste ikinci sipariş açılamaz', async () => {
+    const t = await token();
+    const first = await request(app).post('/sessions').set(authHeader(t)).send({});
+    expect(first.status).toBe(201);
+    const second = await request(app).post('/sessions').set(authHeader(t)).send({});
+    expect(second.status).toBe(409);
+  });
+
+  it('line update ve remove', async () => {
+    const t = await token();
+    const opened = await request(app).post('/sessions').set(authHeader(t)).send({});
+    const sid = opened.body.session.id;
+    const up = await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(t))
+      .send({ menuItemId: fixtures.tea.id, qty: 2 });
+    expect(up.status).toBe(200);
+    expect(up.body.session.lines.some((l) => l.qty === 2)).toBe(true);
+
+    const rm = await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(t))
+      .send({ menuItemId: fixtures.tea.id, qty: 0 });
+    expect(rm.status).toBe(200);
+    expect(rm.body.session.lines.length).toBe(0);
+  });
+
+  it('confirm → sent + ticket', async () => {
+    const t = await token();
+    const opened = await request(app).post('/sessions').set(authHeader(t)).send({});
+    const sid = opened.body.session.id;
+    await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(t))
+      .send({ menuItemId: fixtures.tea.id, qty: 1 });
+    const conf = await request(app)
+      .post(`/sessions/${sid}/confirm`)
+      .set(authHeader(t))
+      .send({});
+    expect(conf.status).toBe(200);
+    expect(conf.body.session.status).toBe('sent');
+    const ticket = await prisma.kitchenTicket.findUnique({ where: { sessionId: sid } });
+    expect(ticket).toBeTruthy();
+  });
+
+  it('duplicate confirm reddedilir', async () => {
+    const t = await token();
+    const opened = await request(app).post('/sessions').set(authHeader(t)).send({});
+    const sid = opened.body.session.id;
+    await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(t))
+      .send({ menuItemId: fixtures.tea.id, qty: 1 });
+    const first = await request(app)
+      .post(`/sessions/${sid}/confirm`)
+      .set(authHeader(t))
+      .send({});
+    expect(first.status).toBe(200);
+    const second = await request(app)
+      .post(`/sessions/${sid}/confirm`)
+      .set(authHeader(t))
+      .send({});
+    expect(second.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it('timeout finalize', async () => {
+    const t = await token();
+    const opened = await request(app).post('/sessions').set(authHeader(t)).send({});
+    const sid = opened.body.session.id;
+    await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(t))
+      .send({ menuItemId: fixtures.tea.id, qty: 1 });
+
+    const result = await finalizeSession(sid, 'timeout', null, { requestId: 'test-timeout' });
+    expect(result).toBeTruthy();
+    expect(result.status).toBe('sent');
+  });
+});
+
+describe('RACE CONDITION', () => {
+  let app;
+
+  beforeAll(() => {
+    app = getApp();
+  });
+
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  it('paralel iki POST /sessions — yalnız biri başarılı', async () => {
+    const login = await loginAs(request(app), 'yusuf');
+    const t = login.body.token;
+    const [a, b] = await Promise.all([
+      request(app).post('/sessions').set(authHeader(t)).send({}),
+      request(app).post('/sessions').set(authHeader(t)).send({}),
+    ]);
+    const statuses = [a.status, b.status].sort();
+    expect(statuses).toEqual([201, 409]);
+    const collecting = await prisma.orderSession.count({
+      where: { status: 'collecting', officeId: a.body.session?.officeId || b.body.session?.officeId },
+    });
+    expect(collecting).toBe(1);
+  });
+});
