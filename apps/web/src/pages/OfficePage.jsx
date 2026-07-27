@@ -3,12 +3,14 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useSocket } from '../lib/socket';
 import { useCountdown } from '../lib/useCountdown';
+import { useConfirm } from '../lib/confirm';
+import { initials } from '../lib/format';
+import { iconMeta } from '../lib/uxLabels';
 import AppHeader from '../components/AppHeader';
 import AnnouncementBanner from '../components/AnnouncementBanner';
 import { Skeleton, LoadError, OfflineBanner, EmptyState } from '../components/LoadStates';
 import { useOnline } from '../lib/useOnline';
-
-const ICONS = { tea: '🍵', soda: '🥤', coffee: '☕', water: '💧', cup: '🧁' };
+import { StatusDot } from '../components/Badge';
 
 function notify(title, body) {
   if (typeof Notification === 'undefined') return;
@@ -50,6 +52,7 @@ function eventLabel(type, actor, payload) {
 export default function OfficePage() {
   const { user, logout } = useAuth();
   const { on, connected, reconnectKey } = useSocket();
+  const { confirm: confirmDialog } = useConfirm();
   const online = useOnline(connected);
   const [session, setSession] = useState(null);
   const [menu, setMenu] = useState([]);
@@ -187,9 +190,12 @@ export default function OfficePage() {
     if (!session) return;
     if (session.pendingUsers?.length) {
       const names = session.pendingUsers.map((u) => u.name).join(', ');
-      const ok = window.confirm(
-        `Henüz sipariş vermeyenler: ${names}\n\nYine de mutfağa göndermek istiyor musunuz?`
-      );
+      const ok = await confirmDialog({
+        title: 'Siparişi gönder',
+        message: `Henüz sipariş vermeyenler: ${names}. Yine de mutfağa göndermek istiyor musunuz?`,
+        confirmLabel: 'Gönder',
+        tone: 'danger',
+      });
       if (!ok) return;
     }
     setBusy(true);
@@ -229,10 +235,12 @@ export default function OfficePage() {
           <Skeleton rows={5} />
         ) : (
           <>
-        <section className="presence-bar">
+        <section className="presence-bar office-presence">
           {(presence.length ? presence : session?.presence || []).map((u) => (
-            <span key={u.id} className={`presence-chip ${u.online ? 'on' : 'off'}`}>
-              <i /> {u.name}
+            <span key={u.id} className={`presence-chip rich ${u.online ? 'on' : 'off'}`}>
+              <span className="avatar sm">{initials(u.name)}</span>
+              <StatusDot online={u.online} />
+              <span>{u.name}</span>
             </span>
           ))}
         </section>
@@ -256,8 +264,8 @@ export default function OfficePage() {
               <div className="active-order-main">
                 <p className="eyebrow">Aktif Sipariş</p>
                 <h2>{session.openedBy.name} sipariş topluyor</h2>
-                <p className="active-order-timer-line">
-                  <strong>{label}</strong> kaldı
+                <p className="active-order-timer-line countdown-hero">
+                  Kalan süre: <strong>{label}</strong>
                 </p>
                 <div className="participant-boards">
                   <div>
@@ -268,30 +276,31 @@ export default function OfficePage() {
                       )}
                       {(session.participants || []).map((p) => (
                         <span key={p.id} className="participant-chip joined">
-                          <span className="tick" aria-hidden>
-                            ✓
-                          </span>
+                          <span className="avatar sm">{initials(p.name)}</span>
                           {p.name}
+                          <em>Hazır</em>
                         </span>
                       ))}
                     </div>
                   </div>
                   <div>
-                    <h4>Henüz katılmayanlar</h4>
+                    <h4>Bekleyenler</h4>
                     <div className="participant-chips">
                       {(session.pendingUsers || []).length === 0 && (
                         <span className="muted">Herkes katıldı</span>
                       )}
                       {(session.pendingUsers || []).map((u) => (
                         <span key={u.id} className="participant-chip pending">
+                          <span className="avatar sm">{initials(u.name)}</span>
                           {u.name}
+                          <em>Bekliyor</em>
                         </span>
                       ))}
                     </div>
                   </div>
                 </div>
               </div>
-              <div className={`timer mega ${urgent ? 'pulse' : ''}`}>
+              <div className={`timer mega ${urgent ? 'pulse' : ''}`} aria-live="polite">
                 <span>{label}</span>
                 <small>{remaining === 0 ? 'Kapanıyor' : 'Kalan süre'}</small>
               </div>
@@ -299,7 +308,7 @@ export default function OfficePage() {
 
             <section className="quick-order">
               <h3>Hızlı Sipariş</h3>
-              <p className="muted tiny">Tek dokunuşla +1 ekler. Detay için aşağıdaki kartları kullanın.</p>
+              <p className="muted tiny">Tek dokunuşla +1 ekler.</p>
               <div className="quick-order-grid">
                 {menu.map((item) => (
                   <button
@@ -308,11 +317,9 @@ export default function OfficePage() {
                     className="quick-order-btn"
                     onClick={() => setQty(item.id, (myQty[item.id] || 0) + 1)}
                   >
-                    <span aria-hidden>{ICONS[item.icon] || ICONS.cup}</span>
+                    <span aria-hidden>{iconMeta(item.icon).emoji}</span>
                     <strong>{item.name}</strong>
-                    {(myQty[item.id] || 0) > 0 && (
-                      <em>{myQty[item.id]}</em>
-                    )}
+                    {(myQty[item.id] || 0) > 0 && <em>{myQty[item.id]}</em>}
                   </button>
                 ))}
               </div>
@@ -325,7 +332,7 @@ export default function OfficePage() {
                   const qty = myQty[item.id] || 0;
                   return (
                     <div key={item.id} className={`menu-card ${qty ? 'active' : ''}`}>
-                      <div className="menu-icon">{ICONS[item.icon] || ICONS.cup}</div>
+                      <div className="menu-icon">{iconMeta(item.icon).emoji}</div>
                       <div className="menu-name">{item.name}</div>
                       <div className="qty-row">
                         <button

@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatsCard from '../../components/ui/StatsCard';
 import PageHeader from '../../components/ui/PageHeader';
@@ -9,10 +10,28 @@ import { EmptyState } from '../../components/LoadStates';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { dashboard, pendingKitchen, offices, officeStats, enrichLogs, logs } = useAdminData();
+  const {
+    dashboard,
+    kitchenStats,
+    offices,
+    officeStats,
+    enrichLogs,
+    logs,
+    announcements,
+    users,
+    onlineMap,
+  } = useAdminData();
   const cards = dashboard?.cards;
   const charts = dashboard?.charts;
-  const recent = enrichLogs(logs).slice(0, 12);
+  const recent = enrichLogs(logs).slice(0, 14);
+  const activeOffices = officeStats.filter((s) => s.activeOrder).length;
+
+  const livePresence = useMemo(() => {
+    const total = users.filter((u) => u.active).length;
+    const online = users.filter((u) => u.active && onlineMap.get(u.id)).length;
+    const ordering = officeStats.filter((s) => s.activeOrder).length;
+    return { total, online, offline: Math.max(0, total - online), ordering };
+  }, [users, onlineMap, officeStats]);
 
   if (!cards) {
     return (
@@ -26,16 +45,22 @@ export default function DashboardPage() {
     );
   }
 
-  return (
-    <div className="admin-page-body">
-      <PageHeader title="Dashboard" description="Kurumsal özet ve canlı durum" />
+  const topProducts = charts?.productDistribution || [];
+  const activeAnnouncements = (announcements || []).filter((a) => a.active).slice(0, 4);
 
-      <div className="dash-grid dash-grid-hero">
+  return (
+    <div className="admin-page-body dash-pro">
+      <PageHeader
+        title="Kontrol Merkezi"
+        description="Canlı operasyon özeti · Alfatek Ofis Sipariş"
+      />
+
+      <div className="dash-grid dash-grid-hero dash-grid-6">
         <StatsCard
-          label="Aktif Sipariş"
-          value={cards.activeOrders}
-          tone="warning"
-          hint="Detaya git"
+          label="Aktif Ofis"
+          value={activeOffices}
+          tone="info"
+          hint="Sipariş toplayan"
           onClick={() => navigate('/admin/offices')}
         />
         <StatsCard
@@ -46,34 +71,40 @@ export default function DashboardPage() {
           onClick={() => navigate('/admin/users?online=1')}
         />
         <StatsCard
-          label="Bekleyen Mutfak"
-          value={pendingKitchen}
+          label="Bekleyen Sipariş"
+          value={kitchenStats.waiting}
           tone="warning"
-          hint="Mutfak"
+          hint="Mutfak kuyruğu"
           onClick={() => navigate('/kitchen')}
+        />
+        <StatsCard
+          label="Hazırlanan"
+          value={kitchenStats.preparing}
+          tone="warning"
+          hint="Mutfakta"
+          onClick={() => navigate('/kitchen')}
+        />
+        <StatsCard
+          label="Teslim Edilen"
+          value={cards.deliveredToday}
+          tone="success"
+          hint="Bugün"
+          onClick={() => navigate('/admin/logs?range=today&category=kitchen')}
         />
         <StatsCard
           label="Bugünkü Sipariş"
           value={cards.todayOrders}
           onClick={() => navigate('/admin/logs?range=today&category=order')}
         />
-        <StatsCard
-          label="Toplam Kullanıcı"
-          value={cards.totalUsers}
-          onClick={() => navigate('/admin/users')}
-        />
-        <StatsCard
-          label="Toplam Ofis"
-          value={offices.length}
-          tone="info"
-          onClick={() => navigate('/admin/offices')}
-        />
       </div>
 
-      <div className="admin-two-col">
-        <div className="admin-col">
+      <div className="dash-board-grid">
+        <section className="admin-col span-2">
           <div className="panel-head">
             <h3>Ofis Durumu</h3>
+            <button type="button" className="btn ghost" onClick={() => navigate('/admin/offices')}>
+              Tümü
+            </button>
           </div>
           {!officeStats.length ? (
             <EmptyState
@@ -104,7 +135,7 @@ export default function DashboardPage() {
                       <dd>{members.length}</dd>
                     </div>
                     <div>
-                      <dt>Aktif sipariş</dt>
+                      <dt>Aktif</dt>
                       <dd>{activeOrder ? 1 : 0}</dd>
                     </div>
                   </dl>
@@ -120,16 +151,48 @@ export default function DashboardPage() {
               ))}
             </div>
           )}
-        </div>
+        </section>
 
-        <div className="admin-col">
+        <section className="admin-col">
           <div className="panel-head">
-            <h3>Son Hareketler</h3>
+            <h3>Canlı Durum</h3>
+          </div>
+          <dl className="live-stat-list">
+            <div>
+              <dt>Toplam kullanıcı</dt>
+              <dd>{livePresence.total}</dd>
+            </div>
+            <div>
+              <dt>Online</dt>
+              <dd className="tone-ok">{livePresence.online}</dd>
+            </div>
+            <div>
+              <dt>Offline</dt>
+              <dd>{livePresence.offline}</dd>
+            </div>
+            <div>
+              <dt>Aktif sipariş açan ofis</dt>
+              <dd className="tone-warn">{livePresence.ordering}</dd>
+            </div>
+            <div>
+              <dt>Toplam ofis</dt>
+              <dd>{offices.length}</dd>
+            </div>
+            <div>
+              <dt>Hazır (mutfak)</dt>
+              <dd>{kitchenStats.ready}</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section className="admin-col span-2">
+          <div className="panel-head">
+            <h3>Canlı Hareketler</h3>
             <button type="button" className="btn ghost" onClick={() => navigate('/admin/logs')}>
-              Tümü
+              Loglar
             </button>
           </div>
-          <ul className="activity-timeline">
+          <ul className="activity-timeline dense">
             {recent.map((log) => (
               <li key={log.id}>
                 <span className="timeline-dot" aria-hidden />
@@ -144,29 +207,74 @@ export default function DashboardPage() {
             ))}
             {!recent.length && <li className="muted">Henüz hareket yok</li>}
           </ul>
-        </div>
-      </div>
+        </section>
 
-      {charts && (
-        <div className="chart-grid">
-          <div className="chart-panel">
-            <h3>Son 7 gün</h3>
-            <BarMini data={charts.last7Days} />
+        <section className="admin-col">
+          <div className="panel-head">
+            <h3>Duyurular</h3>
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => navigate('/admin/announcements')}
+            >
+              Yönet
+            </button>
           </div>
-          <div className="chart-panel">
-            <h3>Ürün dağılımı</h3>
-            {charts.productDistribution?.length ? (
-              <BarMini data={charts.productDistribution} valueKey="qty" labelKey="name" />
-            ) : (
-              <p className="muted">Bugün veri yok</p>
-            )}
+          {!activeAnnouncements.length ? (
+            <p className="muted">Aktif duyuru yok</p>
+          ) : (
+            <ul className="dash-announce-list">
+              {activeAnnouncements.map((a) => (
+                <li key={a.id}>
+                  <Badge
+                    tone={
+                      a.severity === 'critical'
+                        ? 'danger'
+                        : a.severity === 'warning'
+                          ? 'warning'
+                          : 'info'
+                    }
+                  >
+                    {a.severity}
+                  </Badge>
+                  <strong>{a.title}</strong>
+                  <p className="muted tiny">{a.body}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="admin-col span-2">
+          <div className="panel-head">
+            <h3>En çok sipariş edilenler (bugün)</h3>
           </div>
-          <div className="chart-panel">
-            <h3>Ofislere göre</h3>
-            <BarMini data={charts.byOffice} labelKey="name" />
-          </div>
-        </div>
-      )}
+          {topProducts.length ? (
+            <div className="top-product-row">
+              {topProducts.slice(0, 6).map((p) => (
+                <div key={p.name} className="top-product-chip">
+                  <strong>{p.qty}</strong>
+                  <span>{p.name}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="muted">Bugün henüz ürün verisi yok</p>
+          )}
+          {charts && (
+            <div className="chart-grid compact-charts">
+              <div className="chart-panel">
+                <h3>Son 7 gün</h3>
+                <BarMini data={charts.last7Days} />
+              </div>
+              <div className="chart-panel">
+                <h3>Ofislere göre</h3>
+                <BarMini data={charts.byOffice} labelKey="name" />
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }

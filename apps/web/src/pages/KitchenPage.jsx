@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useSocket } from '../lib/socket';
 import AppHeader from '../components/AppHeader';
 import AnnouncementBanner from '../components/AnnouncementBanner';
-import { Skeleton, LoadError, OfflineBanner, EmptyState } from '../components/LoadStates';
+import { Skeleton, LoadError, OfflineBanner, EmptyState, CardSkeleton } from '../components/LoadStates';
 import { useOnline } from '../lib/useOnline';
 
 const STATUS_LABEL = {
-  new: 'Yeni',
+  new: 'Bekliyor',
   preparing: 'Hazırlanıyor',
   ready: 'Hazır',
   delivered: 'Teslim',
@@ -50,13 +50,12 @@ function TicketAge({ ticket }) {
     minute: '2-digit',
   });
   const wait = minutesAgo(ticket.createdAt);
-  const sinceStatus = minutesAgo(ticket.updatedAt);
   if (ticket.status === 'new') return `${arrived} · ${wait} dk bekliyor`;
-  return `${arrived} · ${STATUS_LABEL[ticket.status]} · ${sinceStatus} dk geçti`;
+  return `${arrived} · ${STATUS_LABEL[ticket.status]} · ${minutesAgo(ticket.updatedAt)} dk`;
 }
 
 export default function KitchenPage() {
-  const { user, logout } = useAuth();
+  const { logout } = useAuth();
   const { on, connected, reconnectKey } = useSocket();
   const online = useOnline(connected);
   const [tickets, setTickets] = useState([]);
@@ -67,6 +66,7 @@ export default function KitchenPage() {
   const [booting, setBooting] = useState(true);
   const [leaving, setLeaving] = useState({});
   const [flashOk, setFlashOk] = useState(null);
+  const [busyId, setBusyId] = useState(null);
 
   const load = useCallback(async () => {
     const [data, settings] = await Promise.all([
@@ -120,6 +120,7 @@ export default function KitchenPage() {
 
   async function setStatus(id, status) {
     setError('');
+    setBusyId(id);
     try {
       const data = await api(`/kitchen/tickets/${id}`, {
         method: 'PATCH',
@@ -142,30 +143,55 @@ export default function KitchenPage() {
       setTickets((prev) => prev.map((t) => (t.id === id ? data.ticket : t)));
     } catch (err) {
       setError(err.message);
+    } finally {
+      setBusyId(null);
     }
   }
 
   const nextAction = {
-    new: { status: 'preparing', label: 'Hazırlıyorum' },
-    preparing: { status: 'ready', label: 'Hazır' },
-    ready: { status: 'delivered', label: 'Teslim ettim' },
+    new: { status: 'preparing', label: 'Hazırlamaya başla', tone: 'warning' },
+    preparing: { status: 'ready', label: 'Hazır', tone: 'success' },
+    ready: { status: 'delivered', label: 'Teslim et', tone: 'primary' },
   };
 
+  const counts = useMemo(
+    () => ({
+      new: tickets.filter((t) => t.status === 'new').length,
+      preparing: tickets.filter((t) => t.status === 'preparing').length,
+      ready: tickets.filter((t) => t.status === 'ready').length,
+    }),
+    [tickets]
+  );
+
   return (
-    <div className={`page kitchen ${fullscreen ? 'kitchen-full' : ''}`}>
+    <div className={`page kitchen kitchen-pro ${fullscreen ? 'kitchen-full' : ''}`}>
       <AppHeader
-        title="Mutfak"
-        subtitle={connected ? 'Yeni siparişler anlık düşer' : 'Yeniden bağlanıyor…'}
+        title="Mutfak Paneli"
+        subtitle={connected ? 'Canlı sipariş kuyruğu' : 'Yeniden bağlanıyor…'}
         onLogout={logout}
+        accent="#c45c26"
       />
 
       <main className="content">
         <AnnouncementBanner />
-        <div className="kitchen-toolbar">
+        <div className="kitchen-stats-row">
+          <div className="kitchen-stat tone-new">
+            <span>Bekleyen</span>
+            <strong>{counts.new}</strong>
+          </div>
+          <div className="kitchen-stat tone-prep">
+            <span>Hazırlanan</span>
+            <strong>{counts.preparing}</strong>
+          </div>
+          <div className="kitchen-stat tone-ready">
+            <span>Hazır</span>
+            <strong>{counts.ready}</strong>
+          </div>
           <button type="button" className="btn ghost" onClick={() => setFullscreen((f) => !f)}>
-            {fullscreen ? 'Normal görünüm' : 'Tam ekran kartlar'}
+            {fullscreen ? 'Normal görünüm' : 'Tablet / tam ekran'}
           </button>
         </div>
+
         <LoadError
           message={error}
           onRetry={() => {
@@ -176,69 +202,71 @@ export default function KitchenPage() {
         <OfflineBanner online={online} onRetry={() => load().catch((e) => setError(e.message))} />
 
         {booting ? (
-          <Skeleton rows={4} />
+          <CardSkeleton count={3} />
         ) : tickets.length === 0 ? (
           <EmptyState
             icon="🍽️"
             title="Bekleyen sipariş yok"
-            description="Ofislerden onaylanan siparişler burada özet olarak görünür."
+            description="Ofislerden onaylanan siparişler burada büyük kartlar halinde görünür."
           />
-        ) : null}
-
-        {!booting && (
+        ) : (
           <div className="ticket-grid kitchen-big">
-            {tickets.map((ticket) => (
-              <article
-                key={ticket.id}
-                className={`ticket-card big status-${ticket.status} ${leaving[ticket.id] ? 'leaving' : ''} ${flashOk === ticket.id ? 'success-flash' : ''}`}
-                style={{ '--office': ticket.office.color }}
-              >
-                <header>
-                  <span className="office-tag">{ticket.office.name}</span>
-                  <span className={`status-pill status-${ticket.status}`}>
-                    {STATUS_LABEL[ticket.status]}
-                  </span>
-                </header>
-                <p className="ticket-age">
-                  <TicketAge ticket={ticket} />
-                </p>
-                <ul className="ticket-summary hero-summary">
-                  {ticket.summary.map((s) => (
-                    <li key={s.menuItemId}>
-                      <span className="big-qty">{s.qty}</span>
-                      <span className="big-name">{s.name.toUpperCase()}</span>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  type="button"
-                  className="linkish"
-                  onClick={() => setExpanded((e) => ({ ...e, [ticket.id]: !e[ticket.id] }))}
+            {tickets.map((ticket) => {
+              const action = nextAction[ticket.status];
+              return (
+                <article
+                  key={ticket.id}
+                  className={`ticket-card big pro status-${ticket.status} ${leaving[ticket.id] ? 'leaving' : ''} ${flashOk === ticket.id ? 'success-flash' : ''}`}
+                  style={{ '--office': ticket.office.color }}
                 >
-                  {expanded[ticket.id] ? 'Kişileri gizle' : 'Kim ne istedi?'}
-                </button>
-                {expanded[ticket.id] && (
-                  <ul className="ticket-details">
-                    {ticket.details.map((d, i) => (
-                      <li key={`${d.userId}-${d.menuItemId}-${i}`}>
-                        {d.userName}: {d.qty}× {d.menuItemName}
+                  <header>
+                    <span className="office-tag">{ticket.office.name}</span>
+                    <span className={`status-pill status-${ticket.status}`}>
+                      {STATUS_LABEL[ticket.status]}
+                    </span>
+                  </header>
+                  <p className="ticket-age">
+                    <TicketAge ticket={ticket} />
+                  </p>
+                  <ul className="ticket-summary hero-summary">
+                    {ticket.summary.map((s) => (
+                      <li key={s.menuItemId}>
+                        <span className="big-qty">{s.qty}</span>
+                        <span className="big-name">{s.name}</span>
                       </li>
                     ))}
                   </ul>
-                )}
-                <div className="ticket-actions">
-                  {nextAction[ticket.status] && (
-                    <button
-                      className="btn primary xl"
-                      onClick={() => setStatus(ticket.id, nextAction[ticket.status].status)}
-                    >
-                      {nextAction[ticket.status].label}
-                    </button>
+                  <button
+                    type="button"
+                    className="linkish"
+                    onClick={() => setExpanded((e) => ({ ...e, [ticket.id]: !e[ticket.id] }))}
+                  >
+                    {expanded[ticket.id] ? 'Kişileri gizle' : 'Kim ne istedi?'}
+                  </button>
+                  {expanded[ticket.id] && (
+                    <ul className="ticket-details">
+                      {ticket.details.map((d, i) => (
+                        <li key={`${d.userId}-${d.menuItemId}-${i}`}>
+                          {d.userName}: {d.qty}× {d.menuItemName}
+                        </li>
+                      ))}
+                    </ul>
                   )}
-                </div>
-                {flashOk === ticket.id && <div className="success-burst">Teslim edildi</div>}
-              </article>
-            ))}
+                  <div className="ticket-actions">
+                    {action && (
+                      <button
+                        className={`btn xl kitchen-action ${action.tone}`}
+                        disabled={busyId === ticket.id}
+                        onClick={() => setStatus(ticket.id, action.status)}
+                      >
+                        {busyId === ticket.id ? '…' : action.label}
+                      </button>
+                    )}
+                  </div>
+                  {flashOk === ticket.id && <div className="success-burst">Teslim edildi</div>}
+                </article>
+              );
+            })}
           </div>
         )}
       </main>

@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { homeFor } from './lib/format';
 import LoginPage from './pages/LoginPage';
+import AdminLoginPage from './pages/AdminLoginPage';
 import OfficePage from './pages/OfficePage';
 import KitchenPage from './pages/KitchenPage';
 import ProfilePage from './pages/ProfilePage';
@@ -20,14 +21,14 @@ function returnPath(location) {
   return `${location.pathname}${location.search || ''}`;
 }
 
-function Guard({ roles, children, onForbidden = 'home' }) {
+function Guard({ roles, children, onForbidden = 'home', loginTo = '/login' }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
   if (loading) return <div className="boot">Yükleniyor…</div>;
 
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: returnPath(location) }} />;
+    return <Navigate to={loginTo} replace state={{ from: returnPath(location) }} />;
   }
 
   if (roles && !roles.includes(user.role)) {
@@ -43,10 +44,23 @@ function LoginRoute() {
   const location = useLocation();
   if (!user) return <LoginPage />;
   const from = location.state?.from;
-  if (from && typeof from === 'string' && from !== '/login' && !from.startsWith('/login')) {
+  if (
+    from &&
+    typeof from === 'string' &&
+    from !== '/login' &&
+    !from.startsWith('/login') &&
+    !from.startsWith('/admin')
+  ) {
     return <Navigate to={from} replace />;
   }
   return <Navigate to={homeFor(user.role)} replace />;
+}
+
+function AdminLoginRoute() {
+  const { user } = useAuth();
+  if (!user) return <AdminLoginPage />;
+  if (user.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
+  return <AdminLoginPage />;
 }
 
 export default function App() {
@@ -57,15 +71,13 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginRoute />} />
+      <Route path="/admin/login" element={<AdminLoginRoute />} />
+
       <Route
         path="/profile"
         element={
           <Guard>
-            {user?.role === 'admin' ? (
-              <Navigate to="/admin/profile" replace />
-            ) : (
-              <ProfilePage />
-            )}
+            {user?.role === 'admin' ? <Navigate to="/admin/profile" replace /> : <ProfilePage />}
           </Guard>
         }
       />
@@ -89,7 +101,7 @@ export default function App() {
       <Route
         path="/admin"
         element={
-          <Guard roles={['admin']} onForbidden="page">
+          <Guard roles={['admin']} onForbidden="page" loginTo="/admin/login">
             <AdminLayout />
           </Guard>
         }

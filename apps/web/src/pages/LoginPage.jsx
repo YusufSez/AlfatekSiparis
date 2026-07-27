@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { homeFor } from '../lib/format';
@@ -90,6 +90,9 @@ export default function LoginPage() {
           <button className="btn primary" disabled={busy} type="submit">
             {busy ? 'Giriş yapılıyor…' : 'Giriş yap'}
           </button>
+          <p className="muted tiny login-admin-link">
+            Yönetici misiniz? <Link to="/admin/login">Yönetim paneli girişi</Link>
+          </p>
         </form>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
+import Tooltip from '../../components/ui/Tooltip';
 import { Badge } from '../../components/Badge';
 import { EmptyState } from '../../components/LoadStates';
 import { api } from '../../lib/api';
@@ -99,16 +100,23 @@ export default function MenuPage() {
 
   return (
     <div className="admin-page-body">
-      <PageHeader title="Menü" description="Ürünler, ikonlar ve sıra" />
+      <PageHeader title="Menü" description="Ürün kartları, simgeler ve sıra yönetimi" />
 
-      <form className="stack-form card-form" onSubmit={createMenu}>
+      <form className="stack-form card-form menu-create-form" onSubmit={createMenu}>
         <h3 className="form-title">Yeni ürün</h3>
         <label>
           Ürün adı
           <input name="name" required placeholder="Örn. Çay" />
         </label>
         <label>
-          İkon
+          <span className="label-with-tip">
+            Ürün Simgesi
+            <Tooltip label="Ofis ekranında ürün kartında gösterilir. Sipariş mantığını değiştirmez.">
+              <span className="tip-dot" tabIndex={0} aria-label="Bilgi">
+                ?
+              </span>
+            </Tooltip>
+          </span>
           <select name="icon" value={iconDraft} onChange={(e) => setIconDraft(e.target.value)}>
             {ICON_OPTIONS.map(([value, meta]) => (
               <option key={value} value={value}>
@@ -117,11 +125,16 @@ export default function MenuPage() {
             ))}
           </select>
         </label>
-        <div className="icon-preview">
-          <span className="icon-preview-emoji">{preview.emoji}</span>
-          <span>
-            Önizleme: <strong>{preview.label}</strong>
-          </span>
+        <div className="icon-preview product-preview">
+          <div className="product-thumb" aria-hidden>
+            <span>{preview.emoji}</span>
+          </div>
+          <div>
+            <strong>Önizleme</strong>
+            <p className="muted">
+              {preview.emoji} {preview.label}
+            </p>
+          </div>
         </div>
         <Button type="submit" variant="primary" loading={busy}>
           Ürün ekle
@@ -137,44 +150,47 @@ export default function MenuPage() {
             return (
               <article
                 key={item.id}
-                className={`menu-product-card ${item.active ? '' : 'is-passive'}`}
+                className={`menu-product-card pro ${item.active ? '' : 'is-passive'}`}
                 draggable
                 onDragStart={() => setDragId(item.id)}
                 onDragOver={(e) => e.preventDefault()}
                 onDrop={() => onDrop(item.id)}
               >
-                <div className="menu-product-top">
-                  <span className="menu-manage-emoji">{meta.emoji}</span>
-                  <div>
-                    <strong>{item.name}</strong>
-                    <p className="muted">
-                      {meta.label} · Sıra #{item.sortOrder}
-                    </p>
-                  </div>
-                  <Badge tone={item.active ? 'success' : 'danger'}>
-                    {item.active ? 'Aktif' : 'Pasif'}
-                  </Badge>
+                <div className="product-thumb lg" aria-hidden>
+                  {meta.emoji}
                 </div>
-                <label className="compact-select">
-                  <span className="sr-only">İkon</span>
-                  <select value={item.icon} onChange={(e) => setIcon(item, e.target.value)}>
-                    {ICON_OPTIONS.map(([value, m]) => (
-                      <option key={value} value={value}>
-                        {m.emoji} {m.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className="row-actions wrap">
-                  {item.active ? (
-                    <Button variant="danger-ghost" onClick={() => softDelete(item)}>
-                      Sil
-                    </Button>
-                  ) : (
-                    <Button variant="success-ghost" onClick={() => restore(item)}>
-                      Geri al
-                    </Button>
-                  )}
+                <div className="menu-product-body">
+                  <div className="menu-product-top">
+                    <div>
+                      <strong>{item.name}</strong>
+                      <p className="muted">Sıra #{item.sortOrder}</p>
+                    </div>
+                    <Badge tone={item.active ? 'success' : 'danger'}>
+                      {item.active ? 'Aktif' : 'Pasif'}
+                    </Badge>
+                  </div>
+                  <Badge tone="secondary">{meta.label}</Badge>
+                  <label className="compact-select">
+                    <span className="sr-only">Ürün Simgesi</span>
+                    <select value={item.icon} onChange={(e) => setIcon(item, e.target.value)}>
+                      {ICON_OPTIONS.map(([value, m]) => (
+                        <option key={value} value={value}>
+                          {m.emoji} {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="row-actions wrap">
+                    {item.active ? (
+                      <Button variant="danger-ghost" onClick={() => softDelete(item)}>
+                        Sil
+                      </Button>
+                    ) : (
+                      <Button variant="success-ghost" onClick={() => restore(item)}>
+                        Geri al
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </article>
             );
