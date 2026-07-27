@@ -66,35 +66,40 @@ export default function NotificationCenter() {
         aria-haspopup="true"
         onClick={() => setOpen((o) => !o)}
       >
-        Bildirimler
+        Bildirim
         {unread > 0 && <span className="notif-count">{unread}</span>}
       </button>
       {open && (
-        <div className="notif-panel" role="dialog" aria-label="Bildirimler">
+        <div className="notif-panel notif-panel-v2" role="dialog" aria-label="Bildirimler">
           <div className="notif-head">
             <strong>Bildirimler</strong>
+            {unread > 0 && <span className="badge badge-warning">{unread} yeni</span>}
+          </div>
+          <div className="notif-scroll">
+            {items.length === 0 ? (
+              <p className="muted empty-mini">Bildirim yok</p>
+            ) : (
+              <ul className="notif-list">
+                {items.slice(0, 30).map((n) => (
+                  <li key={n.id} className={!n.readAt ? 'unread' : 'read'}>
+                    <div className="notif-item-top">
+                      <strong>{n.title}</strong>
+                      <span className={`notif-state ${n.readAt ? 'read' : 'unread'}`}>
+                        {n.readAt ? 'Okundu' : 'Yeni'}
+                      </span>
+                    </div>
+                    <span>{n.body}</span>
+                    <small>{new Date(n.createdAt).toLocaleString('tr-TR')}</small>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <div className="notif-foot">
             <button type="button" className="btn ghost" onClick={markAll} disabled={!unread}>
-              Tümünü okundu
+              Tümünü okundu yap
             </button>
           </div>
-          {items.length === 0 ? (
-            <p className="muted empty-mini">Bildirim yok</p>
-          ) : (
-            <ul className="notif-list">
-              {items.slice(0, 20).map((n) => (
-                <li key={n.id} className={!n.readAt ? 'unread' : 'read'}>
-                  <div className="notif-item-top">
-                    <strong>{n.title}</strong>
-                    <span className={`notif-state ${n.readAt ? 'read' : 'unread'}`}>
-                      {n.readAt ? 'Okundu' : 'Yeni'}
-                    </span>
-                  </div>
-                  <span>{n.body}</span>
-                  <small>{new Date(n.createdAt).toLocaleString('tr-TR')}</small>
-                </li>
-              ))}
-            </ul>
-          )}
         </div>
       )}
     </div>

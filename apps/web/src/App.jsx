@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import LoginPage from './pages/LoginPage';
 import OfficePage from './pages/OfficePage';
@@ -6,16 +6,38 @@ import KitchenPage from './pages/KitchenPage';
 import AdminPage from './pages/AdminPage';
 import ProfilePage from './pages/ProfilePage';
 
+function homeFor(role) {
+  if (role === 'admin') return '/admin';
+  if (role === 'kitchen') return '/kitchen';
+  return '/office';
+}
+
 function Guard({ roles, children }) {
   const { user, loading } = useAuth();
+  const location = useLocation();
+
   if (loading) return <div className="boot">Yükleniyor…</div>;
-  if (!user) return <Navigate to="/login" replace />;
-  if (roles && !roles.includes(user.role)) {
-    if (user.role === 'admin') return <Navigate to="/admin" replace />;
-    if (user.role === 'kitchen') return <Navigate to="/kitchen" replace />;
-    return <Navigate to="/office" replace />;
+
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
+
+  if (roles && !roles.includes(user.role)) {
+    return <Navigate to={homeFor(user.role)} replace />;
+  }
+
   return children;
+}
+
+function LoginRoute() {
+  const { user } = useAuth();
+  const location = useLocation();
+  if (!user) return <LoginPage />;
+  const from = location.state?.from;
+  if (from && typeof from === 'string' && from !== '/login') {
+    return <Navigate to={from} replace />;
+  }
+  return <Navigate to={homeFor(user.role)} replace />;
 }
 
 export default function App() {
@@ -25,7 +47,7 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
+      <Route path="/login" element={<LoginRoute />} />
       <Route
         path="/profile"
         element={
@@ -63,12 +85,8 @@ export default function App() {
         element={
           !user ? (
             <Navigate to="/login" replace />
-          ) : user.role === 'admin' ? (
-            <Navigate to="/admin" replace />
-          ) : user.role === 'kitchen' ? (
-            <Navigate to="/kitchen" replace />
           ) : (
-            <Navigate to="/office" replace />
+            <Navigate to={homeFor(user.role)} replace />
           )
         }
       />

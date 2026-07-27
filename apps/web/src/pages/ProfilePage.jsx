@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useSocket } from '../lib/socket';
@@ -161,11 +160,6 @@ export default function ProfilePage() {
               </form>
             </section>
 
-            <p>
-              <Link className="linkish" to="/">
-                Panele dön
-              </Link>
-            </p>
           </div>
         )}
       </main>

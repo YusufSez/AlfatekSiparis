@@ -10,7 +10,7 @@ import { useOnline } from '../lib/useOnline';
 import LogEntry from '../components/LogEntry';
 import { Badge, StatusDot } from '../components/Badge';
 import Modal from '../components/Modal';
-import { ICON_META, ROLE_META, iconMeta, roleHint, roleLabel } from '../lib/uxLabels';
+import { ICON_META, ROLE_META, iconMeta, logSentence, roleHint, roleLabel } from '../lib/uxLabels';
 
 const TABS = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -22,6 +22,17 @@ const TABS = [
   { id: 'presence', label: 'Online' },
   { id: 'logs', label: 'Loglar' },
 ];
+
+function initials(name = '') {
+  return (
+    name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase() || '')
+      .join('') || '?'
+  );
+}
 
 function BarChart({ data, valueKey = 'count', labelKey = 'label' }) {
   const max = Math.max(1, ...data.map((d) => d[valueKey] || 0));
@@ -48,9 +59,9 @@ function BarChart({ data, valueKey = 'count', labelKey = 'label' }) {
 
 function DashCard({ label, value, tone }) {
   return (
-    <div className={`dash-card ${tone ? `tone-${tone}` : ''}`}>
+    <div className={`dash-card dash-card-lg ${tone ? `tone-${tone}` : ''}`}>
       <span>{label}</span>
-      <strong>{value}</strong>
+      <strong>{value ?? '—'}</strong>
     </div>
   );
 }
@@ -74,15 +85,22 @@ export default function AdminPage() {
   const [message, setMessage] = useState('');
   const [dragId, setDragId] = useState(null);
   const [booting, setBooting] = useState(true);
-  const [expandedOffice, setExpandedOffice] = useState(null);
+  const [officeModal, setOfficeModal] = useState(null);
   const [userRole, setUserRole] = useState('office_user');
   const [userFilter, setUserFilter] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userOfficeFilter, setUserOfficeFilter] = useState('all');
+  const [userActiveFilter, setUserActiveFilter] = useState('all');
   const [logFilter, setLogFilter] = useState('');
   const [logRange, setLogRange] = useState('all');
   const [logCategory, setLogCategory] = useState('all');
+  const [logUserFilter, setLogUserFilter] = useState('all');
+  const [logOfficeFilter, setLogOfficeFilter] = useState('all');
   const [resetUser, setResetUser] = useState(null);
   const [resetPassword, setResetPassword] = useState('');
   const [editOffice, setEditOffice] = useState(null);
+  const [menuIconDraft, setMenuIconDraft] = useState('tea');
+  const [addUserOfficeId, setAddUserOfficeId] = useState('');
   const online = useOnline(connected);
 
   async function refresh() {
@@ -125,6 +143,13 @@ export default function AdminPage() {
     });
   }, [on]);
 
+  useEffect(() => {
+    setOfficeModal((prev) => {
+      if (!prev) return prev;
+      return offices.find((o) => o.id === prev.id) || prev;
+    });
+  }, [offices]);
+
   function flash(msg) {
     setMessage(msg);
     setTimeout(() => setMessage(''), 2500);
@@ -138,47 +163,63 @@ export default function AdminPage() {
     return map;
   }, [presence]);
 
+  const lastLoginMap = useMemo(() => {
+    const map = new Map();
+    for (const l of logs) {
+      if (l.action !== 'auth.login' || !l.actor?.id) continue;
+      if (!map.has(l.actor.id)) map.set(l.actor.id, l.createdAt);
+    }
+    return map;
+  }, [logs]);
+
   const filteredUsers = useMemo(() => {
     const q = userFilter.trim().toLowerCase();
-    if (!q) return users;
-    return users.filter(
-      (u) =>
+    return users.filter((u) => {
+      if (userRoleFilter !== 'all' && u.role !== userRoleFilter) return false;
+      if (userOfficeFilter !== 'all' && (u.officeId || '') !== userOfficeFilter) return false;
+      if (userActiveFilter === 'active' && !u.active) return false;
+      if (userActiveFilter === 'passive' && u.active) return false;
+      if (!q) return true;
+      return (
         u.name.toLowerCase().includes(q) ||
         u.username.toLowerCase().includes(q) ||
-        u.role.includes(q) ||
         (u.office?.name || '').toLowerCase().includes(q)
-    );
-  }, [users, userFilter]);
+      );
+    });
+  }, [users, userFilter, userRoleFilter, userOfficeFilter, userActiveFilter]);
 
-  const filteredLogs = useMemo(() => {
+  const enrichedLogs = useMemo(() => {
     const q = logFilter.trim().toLowerCase();
     const now = Date.now();
     const day = 24 * 60 * 60 * 1000;
-    return logs.filter((l) => {
-      const t = new Date(l.createdAt).getTime();
-      if (logRange === 'today' && now - t > day) return false;
-      if (logRange === 'week' && now - t > 7 * day) return false;
-      if (logRange === 'month' && now - t > 30 * day) return false;
+    return logs
+      .filter((l) => {
+        const t = new Date(l.createdAt).getTime();
+        if (logRange === 'today') {
+          const start = new Date();
+          start.setHours(0, 0, 0, 0);
+          if (t < start.getTime()) return false;
+        }
+        if (logRange === 'week' && now - t > 7 * day) return false;
 
-      const action = l.action || '';
-      if (logCategory === 'order' && !/session\.|ticket\.|kitchen\./.test(action)) return false;
-      if (logCategory === 'user' && !/user|auth\.|password/.test(action)) return false;
-      if (logCategory === 'admin' && !/^admin\.|^announcement\./.test(action)) return false;
-      if (logCategory === 'kitchen' && !/kitchen\.|ticket\./.test(action)) return false;
+        const action = l.action || '';
+        if (logCategory === 'order' && !/session\.|ticket\.|kitchen\./.test(action)) return false;
+        if (logCategory === 'user' && !/user|auth\.|password/.test(action)) return false;
+        if (logCategory === 'admin' && !/^admin\.|^announcement\./.test(action)) return false;
+        if (logCategory === 'kitchen' && !/kitchen\.|ticket\./.test(action)) return false;
 
-      if (!q) return true;
-      const actor = l.actor?.name || '';
-      return (
-        action.toLowerCase().includes(q) ||
-        actor.toLowerCase().includes(q) ||
-        JSON.stringify(l.payload || {}).toLowerCase().includes(q)
-      );
-    });
-  }, [logs, logFilter, logRange, logCategory]);
+        if (logUserFilter !== 'all' && l.actor?.id !== logUserFilter) return false;
 
-  const enrichedLogs = useMemo(
-    () =>
-      filteredLogs.map((l) => {
+        const full = users.find((u) => u.id === l.actor?.id);
+        const officeId = full?.officeId || '';
+        if (logOfficeFilter !== 'all' && officeId !== logOfficeFilter) return false;
+
+        if (!q) return true;
+        const actor = l.actor?.name || '';
+        const sentence = logSentence(l).toLowerCase();
+        return actor.toLowerCase().includes(q) || sentence.includes(q) || action.toLowerCase().includes(q);
+      })
+      .map((l) => {
         if (!l.actor) return l;
         const full = users.find((u) => u.id === l.actor.id);
         return {
@@ -188,9 +229,21 @@ export default function AdminPage() {
             office: full?.office || null,
           },
         };
-      }),
-    [filteredLogs, users]
-  );
+      });
+  }, [logs, logFilter, logRange, logCategory, logUserFilter, logOfficeFilter, users]);
+
+  const officeStats = useMemo(() => {
+    return offices.map((o) => {
+      const members = users.filter((u) => u.officeId === o.id);
+      const onlineCount = members.filter((u) => onlineMap.get(u.id)).length;
+      return {
+        office: o,
+        members,
+        onlineCount,
+        activeOrder: Boolean(o.activeCollectingSessionId),
+      };
+    });
+  }, [offices, users, onlineMap]);
 
   async function runSearch(e) {
     e?.preventDefault();
@@ -243,7 +296,7 @@ export default function AdminPage() {
     if (!window.confirm(`“${o.name}” ofisi silinsin mi?`)) return;
     try {
       await api(`/admin/offices/${o.id}`, { method: 'DELETE' });
-      if (expandedOffice === o.id) setExpandedOffice(null);
+      if (officeModal?.id === o.id) setOfficeModal(null);
       await refresh();
       flash('Ofis silindi');
     } catch (err) {
@@ -275,14 +328,49 @@ export default function AdminPage() {
     }
   }
 
-  async function toggleUser(u) {
+  async function patchUser(u, body, okMsg) {
     try {
-      await api(`/admin/users/${u.id}`, { method: 'PATCH', body: { active: !u.active } });
+      await api(`/admin/users/${u.id}`, { method: 'PATCH', body });
       await refresh();
-      flash(u.active ? `${u.name} pasifleştirildi` : `${u.name} aktifleştirildi`);
+      if (officeModal) {
+        const o = offices.find((x) => x.id === officeModal.id) || officeModal;
+        setOfficeModal(o);
+      }
+      if (okMsg) flash(okMsg);
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  async function toggleUser(u) {
+    await patchUser(u, { active: !u.active }, u.active ? `${u.name} pasifleştirildi` : `${u.name} aktifleştirildi`);
+  }
+
+  async function changeUserRole(u, role) {
+    const body = { role };
+    if (role !== 'office_user') body.officeId = null;
+    await patchUser(u, body, `${u.name} rolü güncellendi`);
+  }
+
+  async function changeUserOffice(u, officeId) {
+    await patchUser(u, { officeId: officeId || null }, `${u.name} ofisi güncellendi`);
+  }
+
+  async function removeFromOffice(u) {
+    const other = offices.find((o) => o.id !== officeModal?.id);
+    if (!other) {
+      setError('Ofisten çıkarmak için başka bir ofis gerekli; veya kullanıcının rolünü değiştirin.');
+      return;
+    }
+    await patchUser(u, { officeId: other.id }, `${u.name} ${other.name} ofisine taşındı`);
+  }
+
+  async function addUserToOffice() {
+    if (!officeModal || !addUserOfficeId) return;
+    const u = users.find((x) => x.id === addUserOfficeId);
+    if (!u) return;
+    await patchUser(u, { role: 'office_user', officeId: officeModal.id }, `${u.name} ofise eklendi`);
+    setAddUserOfficeId('');
   }
 
   async function submitPasswordReset(e) {
@@ -312,13 +400,25 @@ export default function AdminPage() {
         method: 'POST',
         body: {
           name: fd.get('name'),
-          icon: fd.get('icon') || 'cup',
+          icon: fd.get('icon') || 'other',
           sortOrder: Number(fd.get('sortOrder') || menu.length + 1),
         },
       });
       e.target.reset();
+      setMenuIconDraft('tea');
       await refresh();
       flash('Ürün eklendi');
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function softDeleteMenu(item) {
+    if (!window.confirm(`“${item.name}” silinsin mi? (Pasifleştirilir, geri alınabilir)`)) return;
+    try {
+      await api(`/admin/menu-items/${item.id}`, { method: 'PATCH', body: { active: false } });
+      await refresh();
+      flash(`${item.name} silindi`);
     } catch (err) {
       setError(err.message);
     }
@@ -444,14 +544,26 @@ export default function AdminPage() {
 
   const cards = dashboard?.cards;
   const charts = dashboard?.charts;
+  const officeMembers = officeModal ? users.filter((u) => u.officeId === officeModal.id) : [];
+  const candidatesToAdd = officeModal
+    ? users.filter((u) => u.role === 'office_user' && u.officeId !== officeModal.id)
+    : [];
+  const previewIcon = iconMeta(menuIconDraft);
 
-  function officeUsers(officeId) {
-    return users.filter((u) => u.officeId === officeId);
+  function formatLastLogin(userId) {
+    const iso = lastLoginMap.get(userId);
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('tr-TR', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
   }
 
   return (
     <div className="page admin-page">
-      <AppHeader title="Admin" subtitle="Yönetim paneli" onLogout={logout} userName={user.name} />
+      <AppHeader title="Yönetim paneli" subtitle="Kurumsal kontrol merkezi" onLogout={logout} />
       <main className="content">
         <AnnouncementBanner />
         <OfflineBanner online={online} onRetry={() => refresh().catch((e) => setError(e.message))} />
@@ -497,23 +609,79 @@ export default function AdminPage() {
 
             {tab === 'dashboard' && cards && (
               <section className="admin-section">
-                <div className="dash-grid">
-                  <DashCard label="Aktif kullanıcı" value={cards.totalUsers} />
-                  <DashCard label="Online kullanıcı" value={cards.onlineUsers} tone="success" />
-                  <DashCard label="Bugün verilen sipariş" value={cards.todayOrders} />
-                  <DashCard label="Aktif sipariş (toplanıyor)" value={cards.activeOrders} tone="warning" />
-                  <DashCard label="Bekleyen mutfak siparişi" value={pendingKitchen} tone="warning" />
-                  <DashCard label="Bugün teslim edilen" value={cards.deliveredToday} tone="success" />
-                  {(charts?.byOffice || []).map((o) => (
-                    <DashCard
-                      key={o.officeId}
-                      label={`${o.name} (7 gün)`}
-                      value={o.count}
-                    />
-                  ))}
-                  {Object.entries(cards.onlineByOffice || {}).map(([name, n]) => (
-                    <DashCard key={`on-${name}`} label={`${name} online`} value={n} tone="info" />
-                  ))}
+                <div className="dash-grid dash-grid-hero">
+                  <DashCard label="Aktif Sipariş" value={cards.activeOrders} tone="warning" />
+                  <DashCard label="Bugünkü Sipariş" value={cards.todayOrders} />
+                  <DashCard label="Online Kullanıcı" value={cards.onlineUsers} tone="success" />
+                  <DashCard label="Bekleyen Mutfak" value={pendingKitchen} tone="warning" />
+                  <DashCard label="Toplam Kullanıcı" value={cards.totalUsers} />
+                  <DashCard label="Toplam Ofis" value={offices.length} tone="info" />
+                </div>
+
+                <div className="admin-two-col">
+                  <div className="admin-col">
+                    <div className="panel-head">
+                      <h3>Ofis Durumu</h3>
+                    </div>
+                    <div className="office-status-grid">
+                      {officeStats.map(({ office: o, members, onlineCount, activeOrder }) => (
+                        <article key={o.id} className="office-status-card">
+                          <div className="office-status-top">
+                            <span className="dot" style={{ background: o.color }} />
+                            <strong>{o.name}</strong>
+                            <Badge tone={activeOrder ? 'warning' : 'secondary'}>
+                              {activeOrder ? 'Aktif sipariş' : 'Boş'}
+                            </Badge>
+                          </div>
+                          <dl className="stat-mini">
+                            <div>
+                              <dt>Online</dt>
+                              <dd>{onlineCount}</dd>
+                            </div>
+                            <div>
+                              <dt>Aktif sipariş</dt>
+                              <dd>{activeOrder ? 1 : 0}</dd>
+                            </div>
+                            <div>
+                              <dt>Kullanıcı</dt>
+                              <dd>{members.length}</dd>
+                            </div>
+                          </dl>
+                          <button
+                            type="button"
+                            className="btn ghost"
+                            onClick={() => {
+                              setTab('offices');
+                              setOfficeModal(o);
+                            }}
+                          >
+                            Detaya Git
+                          </button>
+                        </article>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="admin-col">
+                    <div className="panel-head">
+                      <h3>Son Hareketler</h3>
+                    </div>
+                    <ul className="activity-timeline">
+                      {enrichedLogs.slice(0, 12).map((log) => (
+                        <li key={log.id}>
+                          <span className="timeline-dot" aria-hidden />
+                          <div>
+                            <p>{logSentence(log)}</p>
+                            <small className="muted">
+                              {log.actor?.office?.name ? `${log.actor.office.name} · ` : ''}
+                              {new Date(log.createdAt).toLocaleString('tr-TR')}
+                            </small>
+                          </div>
+                        </li>
+                      ))}
+                      {!enrichedLogs.length && <li className="muted">Henüz hareket yok</li>}
+                    </ul>
+                  </div>
                 </div>
 
                 <div className="chart-grid">
@@ -547,125 +715,52 @@ export default function AdminPage() {
                   </button>
                 </form>
 
-                {offices.length === 0 ? (
+                {officeStats.length === 0 ? (
                   <EmptyState
                     icon="🏢"
                     title="Henüz ofis yok"
                     description="Teknik veya Operasyon ofisini ekleyerek başlayın."
                   />
                 ) : (
-                  <div className="office-accordion">
-                    {offices.map((o) => {
-                      const open = expandedOffice === o.id;
-                      const members = officeUsers(o.id);
-                      const onlineCount = members.filter((u) => onlineMap.get(u.id)).length;
-                      const hasActive = Boolean(o.activeCollectingSessionId);
-                      return (
-                        <article key={o.id} className={`office-panel ${open ? 'open' : ''}`}>
-                          <button
-                            type="button"
-                            className="office-panel-head"
-                            onClick={() => setExpandedOffice(open ? null : o.id)}
-                            aria-expanded={open}
-                          >
-                            <span className="dot" style={{ background: o.color }} />
-                            <span className="office-head-text">
-                              <strong>{o.name}</strong>
-                              <small className="muted">
-                                {members.length} kullanıcı · {onlineCount} online
-                                {hasActive ? ' · Aktif sipariş var' : ''}
-                              </small>
-                            </span>
-                            <Badge tone={hasActive ? 'warning' : 'secondary'}>
-                              {hasActive ? 'Aktif sipariş' : 'Boş'}
-                            </Badge>
-                            <span className="chevron">{open ? '▾' : '▸'}</span>
+                  <div className="office-card-grid">
+                    {officeStats.map(({ office: o, members, onlineCount, activeOrder }) => (
+                      <article key={o.id} className="office-card">
+                        <div className="office-card-top">
+                          <span className="dot lg" style={{ background: o.color }} />
+                          <div>
+                            <h3>{o.name}</h3>
+                            <p className="muted">
+                              {members.length} kullanıcı · {onlineCount} online
+                            </p>
+                          </div>
+                        </div>
+                        <dl className="stat-mini">
+                          <div>
+                            <dt>Online</dt>
+                            <dd>{onlineCount}</dd>
+                          </div>
+                          <div>
+                            <dt>Aktif sipariş</dt>
+                            <dd>{activeOrder ? 1 : 0}</dd>
+                          </div>
+                          <div>
+                            <dt>Kullanıcı</dt>
+                            <dd>{members.length}</dd>
+                          </div>
+                        </dl>
+                        <div className="row-actions wrap">
+                          <button type="button" className="btn primary" onClick={() => setOfficeModal(o)}>
+                            Detay
                           </button>
-                          {open && (
-                            <div className="office-panel-body">
-                              <div className="row-actions wrap">
-                                <button
-                                  type="button"
-                                  className="btn ghost"
-                                  onClick={() => setEditOffice(o)}
-                                >
-                                  Düzenle
-                                </button>
-                                <button
-                                  type="button"
-                                  className="btn danger-ghost"
-                                  onClick={() => deleteOffice(o)}
-                                >
-                                  Ofisi sil
-                                </button>
-                              </div>
-                              {members.length === 0 ? (
-                                <p className="muted">Bu ofiste kullanıcı yok.</p>
-                              ) : (
-                                <div className="table-wrap">
-                                  <table className="data-table">
-                                    <thead>
-                                      <tr>
-                                        <th>Kullanıcı</th>
-                                        <th>Rol</th>
-                                        <th>Durum</th>
-                                        <th>Online</th>
-                                        <th>İşlem</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {members.map((u) => (
-                                        <tr key={u.id} className={!u.active ? 'row-muted' : ''}>
-                                          <td>
-                                            <strong>{u.name}</strong>
-                                            <div className="muted">@{u.username}</div>
-                                          </td>
-                                          <td>
-                                            <Badge tone="info">{roleLabel(u.role)}</Badge>
-                                          </td>
-                                          <td>
-                                            <Badge tone={u.active ? 'success' : 'danger'}>
-                                              {u.active ? 'Aktif' : 'Pasif'}
-                                            </Badge>
-                                          </td>
-                                          <td>
-                                            <span className="inline-status">
-                                              <StatusDot online={onlineMap.get(u.id)} />
-                                              {onlineMap.get(u.id) ? 'Online' : 'Offline'}
-                                            </span>
-                                          </td>
-                                          <td>
-                                            <div className="row-actions wrap">
-                                              <button
-                                                type="button"
-                                                className="btn ghost"
-                                                onClick={() => toggleUser(u)}
-                                              >
-                                                {u.active ? 'Pasifleştir' : 'Aktifleştir'}
-                                              </button>
-                                              <button
-                                                type="button"
-                                                className="btn ghost"
-                                                onClick={() => {
-                                                  setResetUser(u);
-                                                  setResetPassword('');
-                                                }}
-                                              >
-                                                Şifre sıfırla
-                                              </button>
-                                            </div>
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </article>
-                      );
-                    })}
+                          <button type="button" className="btn ghost" onClick={() => setEditOffice(o)}>
+                            Düzenle
+                          </button>
+                          <button type="button" className="btn danger-ghost" onClick={() => deleteOffice(o)}>
+                            Sil
+                          </button>
+                        </div>
+                      </article>
+                    ))}
                   </div>
                 )}
               </section>
@@ -696,11 +791,7 @@ export default function AdminPage() {
                   </label>
                   <label>
                     Rol
-                    <select
-                      name="role"
-                      value={userRole}
-                      onChange={(e) => setUserRole(e.target.value)}
-                    >
+                    <select name="role" value={userRole} onChange={(e) => setUserRole(e.target.value)}>
                       {Object.entries(ROLE_META).map(([value, meta]) => (
                         <option key={value} value={value}>
                           {meta.label} — {meta.hint}
@@ -722,7 +813,6 @@ export default function AdminPage() {
                           </option>
                         ))}
                       </select>
-                      <small className="field-hint">Ofis kullanıcıları bir ofise bağlı olmalıdır.</small>
                     </label>
                   )}
                   <button className="btn primary" type="submit">
@@ -730,40 +820,65 @@ export default function AdminPage() {
                   </button>
                 </form>
 
-                <div className="toolbar-row">
+                <div className="toolbar-row filters-bar">
                   <input
                     className="filter-input"
                     value={userFilter}
                     onChange={(e) => setUserFilter(e.target.value)}
-                    placeholder="Kullanıcı ara…"
+                    placeholder="Ad veya kullanıcı adı ara…"
                   />
+                  <select value={userRoleFilter} onChange={(e) => setUserRoleFilter(e.target.value)}>
+                    <option value="all">Tüm roller</option>
+                    {Object.entries(ROLE_META).map(([value, meta]) => (
+                      <option key={value} value={value}>
+                        {meta.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select value={userOfficeFilter} onChange={(e) => setUserOfficeFilter(e.target.value)}>
+                    <option value="all">Tüm ofisler</option>
+                    {offices.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select value={userActiveFilter} onChange={(e) => setUserActiveFilter(e.target.value)}>
+                    <option value="all">Aktif / Pasif</option>
+                    <option value="active">Aktif</option>
+                    <option value="passive">Pasif</option>
+                  </select>
                   <span className="muted">{filteredUsers.length} kayıt</span>
                 </div>
 
                 {filteredUsers.length === 0 ? (
-                  <EmptyState icon="👤" title="Kullanıcı bulunamadı" description="Aramayı değiştirin veya yeni kullanıcı ekleyin." />
+                  <EmptyState icon="👤" title="Kullanıcı bulunamadı" description="Filtreleri değiştirin veya yeni kullanıcı ekleyin." />
                 ) : (
                   <div className="table-wrap">
-                    <table className="data-table">
+                    <table className="data-table users-table">
                       <thead>
                         <tr>
-                          <th>Ad</th>
+                          <th>Avatar</th>
+                          <th>Ad Soyad</th>
                           <th>Rol</th>
                           <th>Ofis</th>
                           <th>Durum</th>
-                          <th>İşlem</th>
+                          <th>Son giriş</th>
+                          <th>İşlemler</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredUsers.map((u) => (
                           <tr key={u.id} className={!u.active ? 'row-muted' : ''}>
                             <td>
+                              <span className="avatar">{initials(u.name)}</span>
+                            </td>
+                            <td>
                               <strong>{u.name}</strong>
                               <div className="muted">@{u.username}</div>
                             </td>
                             <td>
                               <Badge tone="info">{roleLabel(u.role)}</Badge>
-                              <div className="muted tiny">{roleHint(u.role)}</div>
                             </td>
                             <td>{u.office?.name || '—'}</td>
                             <td>
@@ -771,6 +886,7 @@ export default function AdminPage() {
                                 {u.active ? 'Aktif' : 'Pasif'}
                               </Badge>
                             </td>
+                            <td className="muted">{formatLastLogin(u.id)}</td>
                             <td>
                               <div className="row-actions wrap">
                                 <button type="button" className="btn ghost" onClick={() => toggleUser(u)}>
@@ -806,24 +922,33 @@ export default function AdminPage() {
                     <input name="name" placeholder="Örn. Çay" required />
                   </label>
                   <label>
-                    Görsel simge
-                    <select name="icon" defaultValue="cup">
-                      {Object.entries(ICON_META).map(([value, meta]) => (
-                        <option key={value} value={value}>
-                          {meta.emoji} {meta.label}
-                        </option>
-                      ))}
+                    İkon
+                    <select
+                      name="icon"
+                      value={menuIconDraft}
+                      onChange={(e) => setMenuIconDraft(e.target.value)}
+                    >
+                      {Object.entries(ICON_META)
+                        .filter(([k]) => k !== 'cup')
+                        .map(([value, meta]) => (
+                          <option key={value} value={value}>
+                            {meta.emoji} {meta.label}
+                          </option>
+                        ))}
                     </select>
-                    <small className="field-hint">
-                      Ofis ekranında ürün kartında gösterilir. Sipariş mantığını değiştirmez.
-                    </small>
                   </label>
+                  <div className="icon-preview">
+                    <span className="icon-preview-emoji">{previewIcon.emoji}</span>
+                    <span>
+                      Önizleme: <strong>{previewIcon.label}</strong>
+                    </span>
+                  </div>
                   <button className="btn primary" type="submit">
                     Ürün ekle
                   </button>
                 </form>
 
-                <p className="muted section-note">Sürükleyerek sırayı değiştirin. Pasif ürünler ofiste görünmez.</p>
+                <p className="muted section-note">Sürükleyerek sırayı değiştirin. Silinen ürünler soft-delete ile pasifleşir.</p>
 
                 {menu.length === 0 ? (
                   <EmptyState icon="🍽️" title="Menü boş" description="İlk içecek ürününü ekleyin." />
@@ -848,28 +973,34 @@ export default function AdminPage() {
                           </span>
                           <div className="menu-manage-info">
                             <strong>{item.name}</strong>
-                            <span className="muted">Sıra #{item.sortOrder}</span>
+                            <span className="muted">
+                              {meta.emoji} {meta.label}
+                            </span>
                           </div>
                           <label className="compact-select">
-                            <span className="sr-only">Simge</span>
+                            <span className="sr-only">İkon</span>
                             <select value={item.icon} onChange={(e) => setIcon(item, e.target.value)}>
-                              {Object.entries(ICON_META).map(([value, m]) => (
-                                <option key={value} value={value}>
-                                  {m.emoji} {m.label}
-                                </option>
-                              ))}
+                              {Object.entries(ICON_META)
+                                .filter(([k]) => k !== 'cup')
+                                .map(([value, m]) => (
+                                  <option key={value} value={value}>
+                                    {m.emoji} {m.label}
+                                  </option>
+                                ))}
                             </select>
                           </label>
                           <Badge tone={item.active ? 'success' : 'danger'}>
                             {item.active ? 'Aktif' : 'Pasif'}
                           </Badge>
-                          <button
-                            type="button"
-                            className={item.active ? 'btn danger-ghost' : 'btn success-ghost'}
-                            onClick={() => toggleMenu(item)}
-                          >
-                            {item.active ? 'Pasifleştir' : 'Aktifleştir'}
-                          </button>
+                          {item.active ? (
+                            <button type="button" className="btn danger-ghost" onClick={() => softDeleteMenu(item)}>
+                              Sil
+                            </button>
+                          ) : (
+                            <button type="button" className="btn success-ghost" onClick={() => toggleMenu(item)}>
+                              Geri al
+                            </button>
+                          )}
                         </li>
                       );
                     })}
@@ -937,10 +1068,6 @@ export default function AdminPage() {
                           </div>
                           <strong>{a.title}</strong>
                           <div className="muted">{a.body}</div>
-                          <div className="muted tiny">
-                            {new Date(a.startsAt).toLocaleString('tr-TR')}
-                            {a.endsAt ? ` → ${new Date(a.endsAt).toLocaleString('tr-TR')}` : ''}
-                          </div>
                         </div>
                         <span className="row-actions wrap">
                           <button type="button" className="btn ghost" onClick={() => toggleAnnouncement(a)}>
@@ -1009,7 +1136,6 @@ export default function AdminPage() {
                       rows={4}
                       defaultValue={JSON.stringify(settings.config || {}, null, 2)}
                     />
-                    <small className="field-hint">Yalnızca teknik ayarlar içindir.</small>
                   </label>
                   <button className="btn primary" type="submit">
                     Kaydet
@@ -1049,14 +1175,13 @@ export default function AdminPage() {
                     className="filter-input"
                     value={logFilter}
                     onChange={(e) => setLogFilter(e.target.value)}
-                    placeholder="Loglarda ara…"
+                    placeholder="Hareketlerde ara…"
                   />
                   <div className="filter-chips">
                     {[
                       ['all', 'Tümü'],
                       ['today', 'Bugün'],
-                      ['week', 'Bu Hafta'],
-                      ['month', 'Bu Ay'],
+                      ['week', 'Bu hafta'],
                     ].map(([id, label]) => (
                       <button
                         key={id}
@@ -1068,28 +1193,33 @@ export default function AdminPage() {
                       </button>
                     ))}
                   </div>
-                  <div className="filter-chips">
-                    {[
-                      ['all', 'Hepsi'],
-                      ['order', 'Sipariş'],
-                      ['user', 'Kullanıcı'],
-                      ['admin', 'Admin'],
-                      ['kitchen', 'Kitchen'],
-                    ].map(([id, label]) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={`chip-btn ${logCategory === id ? 'active' : ''}`}
-                        onClick={() => setLogCategory(id)}
-                      >
-                        {label}
-                      </button>
+                  <select value={logUserFilter} onChange={(e) => setLogUserFilter(e.target.value)}>
+                    <option value="all">Tüm kullanıcılar</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name}
+                      </option>
                     ))}
-                  </div>
+                  </select>
+                  <select value={logOfficeFilter} onChange={(e) => setLogOfficeFilter(e.target.value)}>
+                    <option value="all">Tüm ofisler</option>
+                    {offices.map((o) => (
+                      <option key={o.id} value={o.id}>
+                        {o.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select value={logCategory} onChange={(e) => setLogCategory(e.target.value)}>
+                    <option value="all">Tüm işlemler</option>
+                    <option value="order">Sipariş</option>
+                    <option value="user">Kullanıcı</option>
+                    <option value="admin">Admin</option>
+                    <option value="kitchen">Mutfak</option>
+                  </select>
                   <span className="muted">{enrichedLogs.length} kayıt</span>
                 </div>
                 {enrichedLogs.length === 0 ? (
-                  <EmptyState icon="📋" title="Log bulunamadı" description="Henüz kayıt yok veya arama sonucu boş." />
+                  <EmptyState icon="📋" title="Kayıt bulunamadı" description="Filtreleri değiştirin veya daha sonra tekrar bakın." />
                 ) : (
                   <ul className="log-feed">{enrichedLogs.map((log) => <LogEntry key={log.id} log={log} />)}</ul>
                 )}
@@ -1098,6 +1228,121 @@ export default function AdminPage() {
           </>
         )}
       </main>
+
+      <Modal
+        open={!!officeModal}
+        title={officeModal ? `${officeModal.name} — kullanıcılar` : ''}
+        onClose={() => setOfficeModal(null)}
+        footer={
+          <button type="button" className="btn primary" onClick={() => setOfficeModal(null)}>
+            Kapat
+          </button>
+        }
+      >
+        {officeModal && (
+          <div className="office-modal-body">
+            <div className="add-to-office">
+              <select value={addUserOfficeId} onChange={(e) => setAddUserOfficeId(e.target.value)}>
+                <option value="">Kullanıcı ekle…</option>
+                {candidatesToAdd.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} (@{u.username})
+                    {u.office?.name ? ` — ${u.office.name}` : ''}
+                  </option>
+                ))}
+              </select>
+              <button type="button" className="btn primary" disabled={!addUserOfficeId} onClick={addUserToOffice}>
+                Ekle
+              </button>
+            </div>
+
+            {officeMembers.length === 0 ? (
+              <p className="muted">Bu ofiste kullanıcı yok.</p>
+            ) : (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Kullanıcı</th>
+                      <th>Rol</th>
+                      <th>Durum</th>
+                      <th>Online</th>
+                      <th>İşlem</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {officeMembers.map((u) => (
+                      <tr key={u.id} className={!u.active ? 'row-muted' : ''}>
+                        <td>
+                          <strong>{u.name}</strong>
+                          <div className="muted">@{u.username}</div>
+                        </td>
+                        <td>
+                          <select
+                            className="table-select"
+                            value={u.role}
+                            onChange={(e) => changeUserRole(u, e.target.value)}
+                          >
+                            {Object.entries(ROLE_META).map(([value, meta]) => (
+                              <option key={value} value={value}>
+                                {meta.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td>
+                          <Badge tone={u.active ? 'success' : 'danger'}>
+                            {u.active ? 'Aktif' : 'Pasif'}
+                          </Badge>
+                        </td>
+                        <td>
+                          <span className="inline-status">
+                            <StatusDot online={onlineMap.get(u.id)} />
+                            {onlineMap.get(u.id) ? 'Online' : 'Offline'}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="row-actions wrap">
+                            <button type="button" className="btn ghost" onClick={() => toggleUser(u)}>
+                              {u.active ? 'Pasifleştir' : 'Aktifleştir'}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn ghost"
+                              onClick={() => {
+                                setResetUser(u);
+                                setResetPassword('');
+                              }}
+                            >
+                              Şifre sıfırla
+                            </button>
+                            <button type="button" className="btn danger-ghost" onClick={() => removeFromOffice(u)}>
+                              Ofisten çıkar
+                            </button>
+                            <select
+                              className="table-select"
+                              value={u.officeId || ''}
+                              onChange={(e) => changeUserOffice(u, e.target.value)}
+                              title="Ofis değiştir"
+                            >
+                              <option value="">Ofis yok</option>
+                              {offices.map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
 
       <Modal
         open={!!resetUser}
