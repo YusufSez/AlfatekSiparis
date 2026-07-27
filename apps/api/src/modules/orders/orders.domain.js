@@ -56,6 +56,7 @@ async function notifyUsers(userIds, { title, body, event, payload }) {
 export async function serializeSession(session) {
   const participants = new Map();
   for (const line of session.lines) {
+    if (line.qty <= 0) continue;
     if (!participants.has(line.userId)) {
       participants.set(line.userId, {
         id: line.user.id,
@@ -65,16 +66,26 @@ export async function serializeSession(session) {
     }
   }
 
+  const skippedUsers = (session.skips || []).map((s) => ({
+    id: s.user.id,
+    name: s.user.name,
+    username: s.user.username,
+  }));
+  const skippedIds = new Set(skippedUsers.map((u) => u.id));
+
   const summaryMap = new Map();
   for (const line of session.lines) {
+    if (line.qty <= 0) continue;
     const key = line.menuItemId;
     const prev = summaryMap.get(key) || {
       menuItemId: line.menuItemId,
       name: line.menuItem.name,
       icon: line.menuItem.icon,
       qty: 0,
+      notes: [],
     };
     prev.qty += line.qty;
+    if (line.note) prev.notes.push({ userName: line.user.name, note: line.note });
     summaryMap.set(key, prev);
   }
 
@@ -107,12 +118,19 @@ export async function serializeSession(session) {
         icon: l.menuItem.icon,
       },
       qty: l.qty,
+      note: l.note || null,
     })),
     participants: [...participants.values()],
-    pendingUsers: officeUsers.filter((u) => !participants.has(u.id)),
+    skippedUsers,
+    pendingUsers: officeUsers.filter((u) => !participants.has(u.id) && !skippedIds.has(u.id)),
     presence: officeUsers.map((u) => ({
       ...u,
       online: onlineIds.has(u.id),
+      response: participants.has(u.id)
+        ? 'ordered'
+        : skippedIds.has(u.id)
+          ? 'skipped'
+          : 'pending',
     })),
     summary: [...summaryMap.values()].sort((a, b) => a.name.localeCompare(b.name, 'tr')),
   };
@@ -136,21 +154,26 @@ function buildTicketPayload(session) {
   const summaryMap = new Map();
   const details = [];
   for (const line of session.lines) {
+    if (line.qty <= 0) continue;
     const key = line.menuItemId;
     const prev = summaryMap.get(key) || {
       menuItemId: line.menuItemId,
       name: line.menuItem.name,
       icon: line.menuItem.icon,
       qty: 0,
+      notes: [],
     };
     prev.qty += line.qty;
+    if (line.note) prev.notes.push({ userName: line.user.name, note: line.note });
     summaryMap.set(key, prev);
     details.push({
       userId: line.userId,
       userName: line.user.name,
       menuItemId: line.menuItemId,
       menuItemName: line.menuItem.name,
+      icon: line.menuItem.icon,
       qty: line.qty,
+      note: line.note || null,
     });
   }
   return {
@@ -280,7 +303,7 @@ export async function openSession(user, meta = {}) {
   return payload;
 }
 
-export async function upsertLine(user, sessionId, menuItemId, qty, meta = {}) {
+export async function upsertLine(user, sessionId, menuItemId, qty, meta = {}, note = null) {
   if (user.role !== 'office_user' || !user.officeId) {
     throw httpError(403, 'Sadece ofis kullanıcıları sipariş verebilir');
   }
@@ -303,6 +326,14 @@ export async function upsertLine(user, sessionId, menuItemId, qty, meta = {}) {
   if (!menuItem) throw httpError(404, 'Menü ürünü bulunamadı');
 
   const safeQty = Math.max(0, Math.min(20, Number(qty) || 0));
+  const trimmedNote =
+    typeof note === 'string' && note.trim() ? note.trim().slice(0, 120) : null;
+
+  const isOther =
+    menuItem.icon === 'other' || menuItem.name.toLocaleLowerCase('tr') === 'diğer';
+  if (safeQty > 0 && isOther && !trimmedNote) {
+    throw httpError(400, 'Diğer için açıklama yazın');
+  }
 
   const stillOpen = await prisma.orderSession.findFirst({
     where: { id: sessionId, status: 'collecting', officeId: user.officeId },
@@ -337,19 +368,31 @@ export async function upsertLine(user, sessionId, menuItemId, qty, meta = {}) {
         where: { id: sessionId, status: 'collecting' },
       });
       if (!live) throw httpError(400, 'Bu sipariş artık toplanmıyor');
+      await tx.sessionSkip.deleteMany({ where: { sessionId, userId: user.id } });
       await tx.orderLine.upsert({
         where: {
           sessionId_userId_menuItemId: { sessionId, userId: user.id, menuItemId },
         },
-        create: { sessionId, userId: user.id, menuItemId, qty: safeQty },
-        update: { qty: safeQty },
+        create: {
+          sessionId,
+          userId: user.id,
+          menuItemId,
+          qty: safeQty,
+          note: trimmedNote,
+        },
+        update: { qty: safeQty, note: trimmedNote },
       });
     });
     await writeEvent(
       sessionId,
       SessionEventType.LINE_UPSERTED,
       user.id,
-      { menuItemId, menuItemName: menuItem.name, qty: safeQty },
+      {
+        menuItemId,
+        menuItemName: menuItem.name,
+        qty: safeQty,
+        note: trimmedNote,
+      },
       meta.requestId
     );
   }
@@ -357,7 +400,7 @@ export async function upsertLine(user, sessionId, menuItemId, qty, meta = {}) {
   await writeAudit(
     user.id,
     safeQty === 0 ? SessionEventType.LINE_REMOVED : SessionEventType.LINE_UPSERTED,
-    { sessionId, menuItemId, qty: safeQty },
+    { sessionId, menuItemId, qty: safeQty, note: trimmedNote },
     meta
   );
 
@@ -384,22 +427,17 @@ export async function leaveSession(user, sessionId, meta = {}) {
     throw httpError(404, 'Aktif sipariş bulunamadı');
   }
   if (session.openedById === user.id) {
-    throw httpError(400, 'Siparişi açan kişi çıkamaz; onaylayın veya sürenin dolmasını bekleyin');
+    throw httpError(400, 'Siparişi açan kişi çıkamaz; onaylayın veya oturumu kapatın');
   }
 
-  const result = await prisma.orderLine.deleteMany({
-    where: {
-      sessionId,
-      userId: user.id,
-      session: { status: 'collecting' },
-    },
+  await prisma.$transaction(async (tx) => {
+    const live = await tx.orderSession.findFirst({
+      where: { id: sessionId, status: 'collecting' },
+    });
+    if (!live) throw httpError(400, 'Bu sipariş artık toplanmıyor');
+    await tx.orderLine.deleteMany({ where: { sessionId, userId: user.id } });
+    await tx.sessionSkip.deleteMany({ where: { sessionId, userId: user.id } });
   });
-  if (result.count === 0) {
-    const live = await prisma.orderSession.findUnique({ where: { id: sessionId } });
-    if (!live || live.status !== 'collecting') {
-      throw httpError(400, 'Bu sipariş artık toplanmıyor');
-    }
-  }
   await writeEvent(sessionId, SessionEventType.LEFT, user.id, {}, meta.requestId);
   await writeAudit(user.id, SessionEventType.LEFT, { sessionId }, meta);
 
@@ -426,6 +464,116 @@ export async function confirmSession(user, sessionId, meta = {}) {
   const result = await finalizeSession(sessionId, 'confirm', user.id, meta);
   if (!result) throw httpError(409, 'Sipariş başka bir işlem tarafından kapatıldı');
   return result;
+}
+
+/** Opener cancels collecting session — no kitchen ticket */
+export async function cancelSession(user, sessionId, meta = {}) {
+  const session = await prisma.orderSession.findUnique({
+    where: { id: sessionId },
+    include: { openedBy: { select: { id: true, name: true } } },
+  });
+  if (!session) throw httpError(404, 'Sipariş oturumu bulunamadı');
+  if (session.openedById !== user.id && user.role !== 'admin') {
+    throw httpError(403, 'Sadece siparişi açan kişi oturumu kapatabilir');
+  }
+  if (session.status !== 'collecting') {
+    throw httpError(400, 'Bu sipariş zaten kapatılmış veya gönderilmiş');
+  }
+
+  clearSessionTimer(sessionId);
+  assertTransition('session', 'collecting', 'closed');
+
+  const closed = await prisma.$transaction(async (tx) => {
+    const updated = await claimCollectingSession(tx, sessionId, 'closed');
+    if (!updated) return null;
+    await tx.office.update({
+      where: { id: session.officeId },
+      data: { activeCollectingSessionId: null },
+    });
+    return updated;
+  });
+  if (!closed) throw httpError(409, 'Sipariş başka bir işlem tarafından kapatıldı');
+
+  const actorName = session.openedBy?.name || user.name || 'Bir kullanıcı';
+  await writeEvent(
+    sessionId,
+    SessionEventType.CLOSED,
+    user.id,
+    { reason: 'cancel', message: `${actorName} siparişi iptal etti.` },
+    meta.requestId
+  );
+  await writeAudit(user.id, SessionEventType.CLOSED, { sessionId, reason: 'cancel' }, meta);
+
+  const officeUsers = await prisma.user.findMany({
+    where: { officeId: session.officeId, role: 'office_user', active: true },
+    select: { id: true },
+  });
+  await notifyUsers(
+    officeUsers.map((u) => u.id),
+    {
+      title: 'Sipariş iptal edildi',
+      body: `${actorName} siparişi iptal etti.`,
+      event: SessionEventType.CLOSED,
+      payload: { sessionId, reason: 'cancel' },
+    }
+  );
+
+  const payload = await serializeSession(closed);
+  await notificationService.notify({
+    rooms: [`office:${session.officeId}`],
+    event: SocketEvents.SESSION_CLOSED,
+    payload,
+    requestId: meta.requestId,
+  });
+  await notificationService.notify({
+    rooms: [`office:${session.officeId}`],
+    event: SocketEvents.SESSION_UPDATED,
+    payload: null,
+    requestId: meta.requestId,
+  });
+  logger.info('session.cancelled', { sessionId, requestId: meta.requestId });
+  return payload;
+}
+
+/** User marks "İsteğim yok" — counts as responded, no order lines */
+export async function skipSession(user, sessionId, meta = {}) {
+  if (user.role !== 'office_user' || !user.officeId) {
+    throw httpError(403, 'Yetkisiz');
+  }
+  const session = await prisma.orderSession.findUnique({ where: { id: sessionId } });
+  if (!session || session.officeId !== user.officeId || session.status !== 'collecting') {
+    throw httpError(404, 'Aktif sipariş bulunamadı');
+  }
+  if (new Date(session.endsAt).getTime() <= Date.now()) {
+    await finalizeSession(sessionId, 'timeout', null, meta);
+    throw httpError(400, 'Sipariş süresi doldu');
+  }
+
+  await prisma.$transaction(async (tx) => {
+    const live = await tx.orderSession.findFirst({
+      where: { id: sessionId, status: 'collecting' },
+    });
+    if (!live) throw httpError(400, 'Bu sipariş artık toplanmıyor');
+    await tx.orderLine.deleteMany({ where: { sessionId, userId: user.id } });
+    await tx.sessionSkip.upsert({
+      where: { sessionId_userId: { sessionId, userId: user.id } },
+      create: { sessionId, userId: user.id },
+      update: {},
+    });
+  });
+
+  await writeEvent(sessionId, SessionEventType.SKIPPED, user.id, {}, meta.requestId);
+  await writeAudit(user.id, SessionEventType.SKIPPED, { sessionId }, meta);
+
+  const fresh = await ordersRepository.findSession(sessionId);
+  const payload = await serializeSession(fresh);
+  await notificationService.notify({
+    rooms: [`office:${user.officeId}`],
+    event: SocketEvents.SESSION_UPDATED,
+    payload,
+    requestId: meta.requestId,
+  });
+  return payload;
 }
 
 async function claimCollectingSession(tx, sessionId, nextStatus) {

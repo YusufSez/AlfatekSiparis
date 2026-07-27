@@ -11,6 +11,11 @@ export function sessionInclude() {
       },
       orderBy: { createdAt: 'asc' },
     },
+    skips: {
+      include: {
+        user: { select: { id: true, name: true, username: true } },
+      },
+    },
   };
 }
 

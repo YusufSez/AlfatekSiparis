@@ -6,6 +6,7 @@ const prisma = new PrismaClient();
 async function main() {
   await prisma.userNotification.deleteMany();
   await prisma.sessionEvent.deleteMany();
+  await prisma.sessionSkip.deleteMany();
   await prisma.orderLine.deleteMany();
   await prisma.kitchenTicket.deleteMany();
   await prisma.orderSession.deleteMany();
@@ -40,6 +41,7 @@ async function main() {
     { name: 'Soda', icon: 'soda', sortOrder: 2 },
     { name: 'Kahve', icon: 'coffee', sortOrder: 3 },
     { name: 'Su', icon: 'water', sortOrder: 4 },
+    { name: 'Diğer', icon: 'other', sortOrder: 99 },
   ];
   for (const item of menu) {
     await prisma.menuItem.create({ data: item });

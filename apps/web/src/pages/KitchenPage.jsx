@@ -40,6 +40,15 @@ function playBeep(enabled) {
   }
 }
 
+function personCount(ticket) {
+  const ids = new Set((ticket.details || []).map((d) => d.userId));
+  return ids.size;
+}
+
+function summaryText(ticket) {
+  return (ticket.summary || []).map((s) => `${s.qty}× ${s.name}`).join(', ');
+}
+
 function TicketAge({ ticket }) {
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -55,11 +64,52 @@ function TicketAge({ ticket }) {
   return `${arrived} · ${STATUS_LABEL[ticket.status]} · ${minutesAgo(ticket.updatedAt)} dk`;
 }
 
+function OfficeBanner({ office }) {
+  return (
+    <div className="kitchen-office-banner" style={{ '--office': office.color }}>
+      <span className="kitchen-office-rule" aria-hidden />
+      <div className="kitchen-office-title">
+        <span className="kitchen-office-swatch" aria-hidden />
+        <strong>{office.name}</strong>
+      </div>
+      <span className="kitchen-office-rule" aria-hidden />
+    </div>
+  );
+}
+
+function TicketSummaryBoxes({ summary }) {
+  return (
+    <ul className="ticket-summary hero-summary kitchen-summary-boxes">
+      {(summary || []).map((s) => (
+        <li key={s.menuItemId}>
+          <span className="big-emoji" aria-hidden>
+            {iconMeta(s.icon).emoji}
+          </span>
+          <div className="summary-box-text">
+            <span className="big-qty">{s.qty}</span>
+            <span className="big-name">{s.name}</span>
+          </div>
+          {s.notes?.length > 0 && (
+            <ul className="summary-notes">
+              {s.notes.map((n, i) => (
+                <li key={`${n.userName}-${i}`}>
+                  {n.userName}: {n.note}
+                </li>
+              ))}
+            </ul>
+          )}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function KitchenPage() {
   const { logout } = useAuth();
   const { on, connected, reconnectKey } = useSocket();
   const online = useOnline(connected);
   const [tickets, setTickets] = useState([]);
+  const [history, setHistory] = useState([]);
   const [expanded, setExpanded] = useState({});
   const [soundOn, setSoundOn] = useState(true);
   const [error, setError] = useState('');
@@ -70,11 +120,13 @@ export default function KitchenPage() {
   const [busyId, setBusyId] = useState(null);
 
   const load = useCallback(async () => {
-    const [data, settings] = await Promise.all([
+    const [data, hist, settings] = await Promise.all([
       api('/kitchen/tickets'),
+      api('/kitchen/tickets?status=delivered&take=20'),
       api('/menu/settings/public').catch(() => ({ settings: { notificationSound: true } })),
     ]);
     setTickets(data.tickets);
+    setHistory(hist.tickets || []);
     setSoundOn(settings.settings?.notificationSound !== false);
   }, []);
 
@@ -89,8 +141,7 @@ export default function KitchenPage() {
       setTickets((prev) => [ticket, ...prev.filter((t) => t.id !== ticket.id)]);
       playBeep(soundOn);
       if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        const summary = ticket.summary.map((s) => `${s.qty}× ${s.name}`).join(', ');
-        new Notification(`${ticket.office.name} siparişi`, { body: summary });
+        new Notification(`${ticket.office.name} siparişi`, { body: summaryText(ticket) });
       }
       if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
     });
@@ -99,6 +150,7 @@ export default function KitchenPage() {
         setLeaving((m) => ({ ...m, [ticket.id]: true }));
         setTimeout(() => {
           setTickets((prev) => prev.filter((t) => t.id !== ticket.id));
+          setHistory((prev) => [ticket, ...prev.filter((t) => t.id !== ticket.id)].slice(0, 20));
           setLeaving((m) => {
             const next = { ...m };
             delete next[ticket.id];
@@ -132,6 +184,7 @@ export default function KitchenPage() {
         setLeaving((m) => ({ ...m, [id]: true }));
         setTimeout(() => {
           setTickets((prev) => prev.filter((t) => t.id !== id));
+          setHistory((prev) => [data.ticket, ...prev.filter((t) => t.id !== id)].slice(0, 20));
           setLeaving((m) => {
             const next = { ...m };
             delete next[id];
@@ -220,26 +273,16 @@ export default function KitchenPage() {
                   className={`ticket-card big pro status-${ticket.status} ${leaving[ticket.id] ? 'leaving' : ''} ${flashOk === ticket.id ? 'success-flash' : ''}`}
                   style={{ '--office': ticket.office.color }}
                 >
-                  <header>
-                    <span className="office-tag">{ticket.office.name}</span>
+                  <OfficeBanner office={ticket.office} />
+                  <div className="ticket-card-meta">
                     <span className={`status-pill status-${ticket.status}`}>
                       {STATUS_LABEL[ticket.status]}
                     </span>
-                  </header>
-                  <p className="ticket-age">
-                    <TicketAge ticket={ticket} />
-                  </p>
-                  <ul className="ticket-summary hero-summary">
-                    {ticket.summary.map((s) => (
-                      <li key={s.menuItemId}>
-                        <span className="big-emoji" aria-hidden>
-                          {iconMeta(s.icon).emoji}
-                        </span>
-                        <span className="big-qty">{s.qty}</span>
-                        <span className="big-name">{s.name}</span>
-                      </li>
-                    ))}
-                  </ul>
+                    <p className="ticket-age">
+                      <TicketAge ticket={ticket} />
+                    </p>
+                  </div>
+                  <TicketSummaryBoxes summary={ticket.summary} />
                   <button
                     type="button"
                     className="linkish"
@@ -252,6 +295,7 @@ export default function KitchenPage() {
                       {ticket.details.map((d, i) => (
                         <li key={`${d.userId}-${d.menuItemId}-${i}`}>
                           {d.userName}: {d.qty}× {d.menuItemName}
+                          {d.note ? ` — ${d.note}` : ''}
                         </li>
                       ))}
                     </ul>
@@ -273,6 +317,37 @@ export default function KitchenPage() {
             })}
           </div>
         )}
+
+        <section className="kitchen-history">
+          <h3>Sipariş Geçmişi</h3>
+          <p className="muted tiny">Son 20 teslim edilen sipariş</p>
+          {history.length === 0 ? (
+            <p className="muted">Henüz teslim kaydı yok.</p>
+          ) : (
+            <div className="history-grid">
+              {history.map((ticket) => (
+                <article
+                  key={ticket.id}
+                  className="history-card"
+                  style={{ '--office': ticket.office.color }}
+                >
+                  <OfficeBanner office={ticket.office} />
+                  <div className="history-meta">
+                    <time>
+                      {new Date(ticket.updatedAt || ticket.createdAt).toLocaleTimeString('tr-TR', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}
+                    </time>
+                    <span className="status-pill status-delivered">{STATUS_LABEL.delivered}</span>
+                  </div>
+                  <p className="history-summary">{summaryText(ticket) || '—'}</p>
+                  <p className="history-people muted tiny">{personCount(ticket)} kişi</p>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   );

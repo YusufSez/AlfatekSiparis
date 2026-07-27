@@ -29,15 +29,19 @@ function eventLabel(type, actor, payload) {
     case 'session.opened':
       return `${who} sipariş açtı`;
     case 'session.line_upserted':
-      return `${who}: ${payload.qty}× ${payload.menuItemName}`;
+      return payload?.note
+        ? `${who}: ${payload.qty}× ${payload.menuItemName} (${payload.note})`
+        : `${who}: ${payload.qty}× ${payload.menuItemName}`;
     case 'session.line_removed':
       return `${who} ${payload.menuItemName} kaldırdı`;
     case 'session.left':
       return `${who} siparişten çıktı`;
+    case 'session.skipped':
+      return `${who} isteğinin olmadığını bildirdi`;
     case 'session.sent':
       return 'Mutfağa gönderildi';
     case 'session.closed':
-      return 'Sipariş kapandı';
+      return payload?.message || (payload?.reason === 'cancel' ? `${who} siparişi iptal etti` : 'Sipariş kapandı');
     case 'ticket.preparing':
       return 'Hazırlanıyor';
     case 'ticket.ready':
@@ -47,6 +51,10 @@ function eventLabel(type, actor, payload) {
     default:
       return type;
   }
+}
+
+function isOtherItem(item) {
+  return item?.icon === 'other' || item?.name?.toLocaleLowerCase?.('tr') === 'diğer';
 }
 
 export default function OfficePage() {
@@ -61,6 +69,8 @@ export default function OfficePage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [booting, setBooting] = useState(true);
+  const [otherDraft, setOtherDraft] = useState('');
+  const [otherOpen, setOtherOpen] = useState(false);
   const { label, urgent, remaining } = useCountdown(session?.endsAt);
 
   const load = useCallback(async () => {
@@ -107,7 +117,15 @@ export default function OfficePage() {
         setSession(null);
         notify('Sipariş gönderildi', 'Mutfağa iletildi');
       }),
-      on('session:closed', () => setSession(null)),
+      on('session:closed', (payload) => {
+        setSession(null);
+        const msg = payload?.events
+          ? null
+          : payload?.openedBy?.name
+            ? `${payload.openedBy.name} siparişi iptal etti.`
+            : 'Sipariş oturumu kapandı';
+        if (msg) notify('Sipariş iptal', msg);
+      }),
       on('presence:update', (payload) => {
         if (payload.officeId === user.officeId) setPresence(payload.users);
       }),
@@ -131,19 +149,24 @@ export default function OfficePage() {
     api(`/sessions/${session.id}/events`)
       .then((ev) => setEvents(ev.events))
       .catch(() => {});
-  }, [session?.id, session?.lines?.length, session?.status]);
+  }, [session?.id, session?.lines?.length, session?.skippedUsers?.length, session?.status]);
 
   const myQty = useMemo(() => {
     const map = {};
     if (!session) return map;
     for (const line of session.lines) {
-      if (line.userId === user.id) map[line.menuItemId] = line.qty;
+      if (line.userId === user.id) map[line.menuItemId] = { qty: line.qty, note: line.note };
     }
     return map;
   }, [session, user.id]);
 
   const isOpener = session?.openedBy?.id === user.id;
-  const myHasLines = session?.lines?.some((l) => l.userId === user.id);
+  const myHasLines = session?.lines?.some((l) => l.userId === user.id && l.qty > 0);
+  const mySkipped = session?.skippedUsers?.some((u) => u.id === user.id);
+  const otherItem = useMemo(() => menu.find(isOtherItem), [menu]);
+  const regularMenu = useMemo(() => menu.filter((item) => !isOtherItem(item)), [menu]);
+
+  const presenceList = presence.length ? presence : session?.presence || [];
 
   async function openSession() {
     setBusy(true);
@@ -159,18 +182,43 @@ export default function OfficePage() {
     }
   }
 
-  async function setQty(menuItemId, qty) {
+  async function setQty(menuItemId, qty, note = null) {
     if (!session) return;
     setError('');
     try {
+      const body = { menuItemId, qty };
+      if (note != null) body.note = note;
       const data = await api(`/sessions/${session.id}/lines`, {
         method: 'POST',
-        body: { menuItemId, qty },
+        body,
       });
       setSession(data.session);
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  async function tapItem(item) {
+    if (isOtherItem(item)) {
+      const current = myQty[item.id];
+      setOtherDraft(current?.note || '');
+      setOtherOpen(true);
+      return;
+    }
+    const qty = myQty[item.id]?.qty || 0;
+    await setQty(item.id, qty + 1);
+  }
+
+  async function saveOther() {
+    if (!otherItem || !session) return;
+    const note = otherDraft.trim();
+    if (!note) {
+      setError('Diğer için açıklama yazın');
+      return;
+    }
+    const qty = myQty[otherItem.id]?.qty || 0;
+    await setQty(otherItem.id, Math.max(1, qty), note);
+    setOtherOpen(false);
   }
 
   async function leave() {
@@ -186,13 +234,49 @@ export default function OfficePage() {
     }
   }
 
+  async function skip() {
+    if (!session) return;
+    setBusy(true);
+    setError('');
+    try {
+      const data = await api(`/sessions/${session.id}/skip`, { method: 'POST', body: {} });
+      setSession(data.session);
+      setOtherOpen(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function closeSession() {
+    if (!session) return;
+    const ok = await confirmDialog({
+      title: 'Oturumu kapat',
+      message: 'Sipariş onaylanmadan kapatılacak. Mutfağa ticket gitmeyecek. Devam?',
+      confirmLabel: 'Oturumu kapat',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/sessions/${session.id}/close`, { method: 'POST', body: {} });
+      setSession(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function confirm() {
     if (!session) return;
     if (session.pendingUsers?.length) {
       const names = session.pendingUsers.map((u) => u.name).join(', ');
       const ok = await confirmDialog({
         title: 'Siparişi gönder',
-        message: `Henüz sipariş vermeyenler: ${names}. Yine de mutfağa göndermek istiyor musunuz?`,
+        message: `Henüz cevap vermeyenler: ${names}. Yine de mutfağa göndermek istiyor musunuz?`,
         confirmLabel: 'Gönder',
         tone: 'danger',
       });
@@ -235,174 +319,277 @@ export default function OfficePage() {
           <Skeleton rows={5} />
         ) : (
           <>
-        <section className="presence-bar office-presence">
-          {(presence.length ? presence : session?.presence || []).map((u) => (
-            <span key={u.id} className={`presence-chip rich ${u.online ? 'on' : 'off'}`}>
-              <span className="avatar sm">{initials(u.name)}</span>
-              <StatusDot online={u.online} />
-              <span>{u.name}</span>
-            </span>
-          ))}
-        </section>
-
-        {!session && (
-          <EmptyState
-            icon="🧾"
-            title="Sipariş yok"
-            description="Ofisiniz için yeni bir toplu sipariş açın. Herkes anında bildirim alır."
-            action={
-              <button className="btn primary xl" disabled={busy} onClick={openSession}>
-                Sipariş aç
-              </button>
-            }
-          />
-        )}
-
-        {session && (
-          <>
-            <section className={`session-banner mega active-order-card ${urgent ? 'urgent' : ''}`}>
-              <div className="active-order-main">
-                <p className="eyebrow">Aktif Sipariş</p>
-                <h2>{session.openedBy.name} sipariş topluyor</h2>
-                <div className={`timer mega inline-timer ${urgent ? 'pulse' : ''}`} aria-live="polite">
-                  <span>{label}</span>
-                  <small>{remaining === 0 ? 'Kapanıyor' : 'Kalan süre'}</small>
-                </div>
-                <div className="participant-boards">
-                  <div>
-                    <h4>Katılanlar</h4>
-                    <div className="participant-chips">
-                      {(session.participants || []).length === 0 && (
-                        <span className="muted">Henüz katılan yok</span>
-                      )}
-                      {(session.participants || []).map((p) => (
-                        <span key={p.id} className="participant-chip joined">
-                          <span className="avatar sm">{initials(p.name)}</span>
-                          <span className="chip-name">{p.name}</span>
-                          <em>Hazır</em>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <h4>Bekleyenler</h4>
-                    <div className="participant-chips">
-                      {(session.pendingUsers || []).length === 0 && (
-                        <span className="muted">Herkes katıldı</span>
-                      )}
-                      {(session.pendingUsers || []).map((u) => (
-                        <span key={u.id} className="participant-chip pending">
-                          <span className="avatar sm">{initials(u.name)}</span>
-                          <span className="chip-name">{u.name}</span>
-                          <em>Bekliyor</em>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+            <section className="presence-bar office-presence">
+              {presenceList.map((u) => (
+                <span
+                  key={u.id}
+                  className={`presence-chip rich ${u.online ? 'on' : 'off'} resp-${u.response || 'pending'}`}
+                >
+                  <span className="avatar sm">{initials(u.name)}</span>
+                  <StatusDot online={u.online} />
+                  <span>{u.name}</span>
+                  {u.response === 'skipped' && <em className="resp-badge skip">Gelmeyecek</em>}
+                  {u.response === 'ordered' && <em className="resp-badge ordered">Sipariş</em>}
+                </span>
+              ))}
             </section>
 
-            <section className="quick-order">
-              <h3>Hızlı Sipariş</h3>
-              <p className="muted tiny">Ürüne dokunun veya + / − ile adedi ayarlayın.</p>
-              <div className="quick-order-grid">
-                {menu.map((item) => {
-                  const qty = myQty[item.id] || 0;
-                  return (
-                    <div key={item.id} className={`quick-order-card ${qty ? 'has-qty' : ''}`}>
+            {!session && (
+              <EmptyState
+                icon="🧾"
+                title="Sipariş yok"
+                description="Ofisiniz için yeni bir toplu sipariş açın. Herkes anında bildirim alır."
+                action={
+                  <button className="btn primary xl" disabled={busy} onClick={openSession}>
+                    Sipariş aç
+                  </button>
+                }
+              />
+            )}
+
+            {session && (
+              <>
+                <section className={`session-banner mega active-order-card countdown-focus ${urgent ? 'urgent' : ''}`}>
+                  <p className="eyebrow">Aktif Sipariş</p>
+                  <p className="session-opener muted">{session.openedBy.name} sipariş topluyor</p>
+                  <div className={`timer mega countdown-hero ${urgent ? 'pulse' : ''}`} aria-live="polite">
+                    <strong>{label}</strong>
+                    <small>{remaining === 0 ? 'Kapanıyor' : 'Kalan Süre'}</small>
+                  </div>
+
+                  <div className="participant-boards groups-3">
+                    <div>
+                      <h4>🟢 Sipariş Verdi</h4>
+                      <div className="participant-chips">
+                        {(session.participants || []).length === 0 && (
+                          <span className="muted">Henüz yok</span>
+                        )}
+                        {(session.participants || []).map((p) => (
+                          <span key={p.id} className="participant-chip joined">
+                            <span className="avatar sm">{initials(p.name)}</span>
+                            <span className="chip-name">{p.name}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h4>🟡 İsteğim Yok</h4>
+                      <div className="participant-chips">
+                        {(session.skippedUsers || []).length === 0 && (
+                          <span className="muted">Henüz yok</span>
+                        )}
+                        {(session.skippedUsers || []).map((u) => (
+                          <span key={u.id} className="participant-chip skipped">
+                            <span className="avatar sm">{initials(u.name)}</span>
+                            <span className="chip-name">{u.name}</span>
+                            <em>Gelmeyecek</em>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h4>⚪ Henüz Cevap Vermedi</h4>
+                      <div className="participant-chips">
+                        {(session.pendingUsers || []).length === 0 && (
+                          <span className="muted">Herkes cevapladı</span>
+                        )}
+                        {(session.pendingUsers || []).map((u) => (
+                          <span key={u.id} className="participant-chip pending">
+                            <span className="avatar sm">{initials(u.name)}</span>
+                            <span className="chip-name">{u.name}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="quick-order">
+                  <h3>Hızlı Sipariş</h3>
+                  <p className="muted tiny">Karta dokunun — her dokunuş +1. Azaltmak için −.</p>
+                  <div className="quick-order-grid tap-grid">
+                    {regularMenu.map((item) => {
+                      const qty = myQty[item.id]?.qty || 0;
+                      return (
+                        <div key={item.id} className={`quick-order-card tap-card ${qty ? 'has-qty' : ''}`}>
+                          {qty > 0 && <span className="qo-badge">{qty}</span>}
+                          {qty > 0 && (
+                            <button
+                              type="button"
+                              className="qo-minus"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setQty(item.id, Math.max(0, qty - 1));
+                              }}
+                              aria-label="Azalt"
+                            >
+                              −
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="quick-order-main"
+                            onClick={() => tapItem(item)}
+                            aria-label={`${item.name} ekle`}
+                          >
+                            <span className="qo-emoji" aria-hidden>
+                              {iconMeta(item.icon).emoji}
+                            </span>
+                            <strong>{item.name}</strong>
+                          </button>
+                        </div>
+                      );
+                    })}
+
+                    <div className={`quick-order-card tap-card special skip-card ${mySkipped ? 'has-qty' : ''}`}>
                       <button
                         type="button"
                         className="quick-order-main"
-                        onClick={() => setQty(item.id, qty + 1)}
-                        aria-label={`${item.name} ekle`}
+                        disabled={busy || mySkipped}
+                        onClick={skip}
+                        aria-label="İsteğim yok"
                       >
                         <span className="qo-emoji" aria-hidden>
-                          {iconMeta(item.icon).emoji}
+                          🚫
                         </span>
-                        <strong>{item.name}</strong>
+                        <strong>İsteğim Yok</strong>
+                        {mySkipped && <em className="qo-state">Seçildi</em>}
                       </button>
-                      <div className="qo-qty-row">
+                    </div>
+
+                    {otherItem && (
+                      <div
+                        className={`quick-order-card tap-card special other-card ${myQty[otherItem.id]?.qty ? 'has-qty' : ''}`}
+                      >
+                        {(myQty[otherItem.id]?.qty || 0) > 0 && (
+                          <span className="qo-badge">{myQty[otherItem.id].qty}</span>
+                        )}
+                        {(myQty[otherItem.id]?.qty || 0) > 0 && (
+                          <button
+                            type="button"
+                            className="qo-minus"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const q = myQty[otherItem.id]?.qty || 0;
+                              const note = myQty[otherItem.id]?.note;
+                              setQty(otherItem.id, Math.max(0, q - 1), q - 1 > 0 ? note : null);
+                            }}
+                            aria-label="Azalt"
+                          >
+                            −
+                          </button>
+                        )}
                         <button
                           type="button"
-                          className="btn ghost qo-step"
-                          disabled={qty <= 0}
-                          onClick={() => setQty(item.id, Math.max(0, qty - 1))}
-                          aria-label="Azalt"
+                          className="quick-order-main"
+                          onClick={() => tapItem(otherItem)}
+                          aria-label="Diğer"
                         >
-                          −
+                          <span className="qo-emoji" aria-hidden>
+                            📝
+                          </span>
+                          <strong>Diğer</strong>
+                          {myQty[otherItem.id]?.note && (
+                            <em className="qo-state">{myQty[otherItem.id].note}</em>
+                          )}
                         </button>
-                        <span className="qo-qty" aria-live="polite">
-                          {qty}
-                        </span>
-                        <button
-                          type="button"
-                          className="btn ghost qo-step"
-                          onClick={() => setQty(item.id, qty + 1)}
-                          aria-label="Arttır"
-                        >
-                          +
+                      </div>
+                    )}
+                  </div>
+
+                  {otherOpen && otherItem && (
+                    <div className="other-note-panel">
+                      <label htmlFor="other-note">Ne istersiniz?</label>
+                      <textarea
+                        id="other-note"
+                        rows={2}
+                        maxLength={120}
+                        placeholder="Limonlu çay, şekersiz kahve, sade soda…"
+                        value={otherDraft}
+                        onChange={(e) => setOtherDraft(e.target.value)}
+                      />
+                      <div className="other-note-actions">
+                        <button type="button" className="btn ghost" onClick={() => setOtherOpen(false)}>
+                          Vazgeç
+                        </button>
+                        <button type="button" className="btn primary" onClick={saveOther}>
+                          Kaydet
                         </button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            </section>
+                  )}
+                </section>
 
-            <section className="summary-panel">
-              <h3>Ofis özeti</h3>
-              {session.summary.length === 0 ? (
-                <p className="muted">Henüz sipariş yok</p>
-              ) : (
-                <ul className="summary-list">
-                  {session.summary.map((s) => (
-                    <li key={s.menuItemId}>
-                      <span aria-hidden>{iconMeta(s.icon).emoji}</span>
-                      <strong>{s.qty}×</strong> {s.name}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="detail-lines">
-                {session.lines.map((l) => (
-                  <span key={l.id} className="chip">
-                    {l.user.name}: {l.qty}× {l.menuItem.name}
-                  </span>
-                ))}
-              </div>
-            </section>
+                <section className="summary-panel">
+                  <h3>Ofis özeti</h3>
+                  {session.summary.length === 0 ? (
+                    <p className="muted">Henüz sipariş yok</p>
+                  ) : (
+                    <ul className="summary-list">
+                      {session.summary.map((s) => (
+                        <li key={s.menuItemId}>
+                          <span aria-hidden>{iconMeta(s.icon).emoji}</span>
+                          <strong>{s.qty}×</strong> {s.name}
+                          {s.notes?.length > 0 && (
+                            <span className="muted tiny">
+                              {' '}
+                              ({s.notes.map((n) => `${n.userName}: ${n.note}`).join('; ')})
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="detail-lines">
+                    {session.lines.map((l) => (
+                      <span key={l.id} className="chip">
+                        {l.user.name}: {l.qty}× {l.menuItem.name}
+                        {l.note ? ` — ${l.note}` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </section>
 
-            <section className="timeline-panel">
-              <h3>Zaman çizelgesi</h3>
-              <ul className="timeline">
-                {events.map((e) => (
-                  <li key={e.id}>
-                    <time>{new Date(e.createdAt).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' })}</time>
-                    <span>{eventLabel(e.type, e.actor, e.payload)}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+                <section className="timeline-panel">
+                  <h3>Zaman çizelgesi</h3>
+                  <ul className="timeline">
+                    {events.map((e) => (
+                      <li key={e.id}>
+                        <time>
+                          {new Date(e.createdAt).toLocaleTimeString('tr-TR', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </time>
+                        <span>{eventLabel(e.type, e.actor, e.payload)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
 
-            <div className="cta-row sticky-cta">
-              {!isOpener && myHasLines && (
-                <button className="btn ghost xl" disabled={busy} onClick={leave}>
-                  Siparişten çık
-                </button>
-              )}
-              {isOpener ? (
-                <button className="btn primary xl" disabled={busy} onClick={confirm}>
-                  Mutfağa gönder
-                </button>
-              ) : (
-                <p className="muted center grow">
-                  Siparişi {session.openedBy.name} onaylayacak veya süre dolunca gidecek.
-                </p>
-              )}
-            </div>
-          </>
-        )}
+                <div className="cta-row sticky-cta">
+                  {!isOpener && myHasLines && (
+                    <button className="btn ghost xl" disabled={busy} onClick={leave}>
+                      Siparişten çık
+                    </button>
+                  )}
+                  {isOpener ? (
+                    <>
+                      <button className="btn ghost xl danger-ghost" disabled={busy} onClick={closeSession}>
+                        Oturumu Kapat
+                      </button>
+                      <button className="btn primary xl" disabled={busy} onClick={confirm}>
+                        Mutfağa gönder
+                      </button>
+                    </>
+                  ) : (
+                    <p className="muted center grow">
+                      Siparişi {session.openedBy.name} onaylayacak veya süre dolunca gidecek.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
           </>
         )}
       </main>

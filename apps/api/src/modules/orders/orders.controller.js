@@ -3,11 +3,13 @@ import { z } from 'zod';
 import { authMiddleware, clientMeta, requireRoles } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
 import {
+  cancelSession,
   confirmSession,
   getPresenceForOffice,
   leaveSession,
   openSession,
   serializeSession,
+  skipSession,
   upsertLine,
 } from './orders.domain.js';
 import { ordersRepository } from './orders.repository.js';
@@ -52,6 +54,7 @@ router.post('/:id/lines', requireRoles('office_user'), async (req, res, next) =>
       .object({
         menuItemId: z.string().min(1),
         qty: z.number().int().min(0).max(20),
+        note: z.string().max(120).optional().nullable(),
       })
       .safeParse(req.body);
     if (!parsed.success) throw httpError(400, 'Geçersiz kalem');
@@ -60,7 +63,8 @@ router.post('/:id/lines', requireRoles('office_user'), async (req, res, next) =>
       req.params.id,
       parsed.data.menuItemId,
       parsed.data.qty,
-      clientMeta(req)
+      clientMeta(req),
+      parsed.data.note ?? null
     );
     res.json({ session });
   } catch (err) {
@@ -71,6 +75,24 @@ router.post('/:id/lines', requireRoles('office_user'), async (req, res, next) =>
 router.post('/:id/leave', requireRoles('office_user'), async (req, res, next) => {
   try {
     const session = await leaveSession(req.user, req.params.id, clientMeta(req));
+    res.json({ session });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/skip', requireRoles('office_user'), async (req, res, next) => {
+  try {
+    const session = await skipSession(req.user, req.params.id, clientMeta(req));
+    res.json({ session });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/close', requireRoles('office_user', 'admin'), async (req, res, next) => {
+  try {
+    const session = await cancelSession(req.user, req.params.id, clientMeta(req));
     res.json({ session });
   } catch (err) {
     next(err);

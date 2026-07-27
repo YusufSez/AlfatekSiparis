@@ -3,6 +3,7 @@ export const SessionEventType = Object.freeze({
   LINE_UPSERTED: 'session.line_upserted',
   LINE_REMOVED: 'session.line_removed',
   LEFT: 'session.left',
+  SKIPPED: 'session.skipped',
   SENT: 'session.sent',
   CLOSED: 'session.closed',
   PREPARING: 'ticket.preparing',

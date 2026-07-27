@@ -11,7 +11,7 @@ const ICON_META = {
   water: { label: 'Su', emoji: '💧' },
   juice: { label: 'Meyve Suyu', emoji: '🧃' },
   herbal: { label: 'Bitki Çayı', emoji: '🍵' },
-  other: { label: 'Diğer', emoji: '🧋' },
+  other: { label: 'Diğer', emoji: '📝' },
   cup: { label: 'Diğer', emoji: '🧋' },
 };
 
@@ -44,7 +44,11 @@ const ACTION_MAP = [
     tone: 'warning',
     icon: '🟠',
     text: (p) => {
-      if (p?.menuItemName && p?.qty != null) return `${p.qty} ${p.menuItemName} ekledi.`;
+      if (p?.menuItemName && p?.qty != null) {
+        return p.note
+          ? `${p.qty} ${p.menuItemName} ekledi (${p.note}).`
+          : `${p.qty} ${p.menuItemName} ekledi.`;
+      }
       return 'siparişe ürün ekledi.';
     },
   },
@@ -55,8 +59,17 @@ const ACTION_MAP = [
     text: (p) => (p?.menuItemName ? `${p.menuItemName} ürününü kaldırdı.` : 'siparişten ürün kaldırdı.'),
   },
   { test: /^session\.left$/, tone: 'warning', icon: '🟠', text: () => 'siparişten çıktı.' },
+  { test: /^session\.skipped$/, tone: 'warning', icon: '🟡', text: () => 'isteğinin olmadığını bildirdi.' },
   { test: /^session\.sent$/, tone: 'success', icon: '🟢', text: () => 'siparişi mutfağa gönderdi.' },
-  { test: /^session\.closed$/, tone: 'secondary', icon: '⚪', text: () => 'sipariş oturumunu kapattı.' },
+  {
+    test: /^session\.closed$/,
+    tone: 'secondary',
+    icon: '⚪',
+    text: (p) =>
+      p?.reason === 'cancel' || p?.message
+        ? 'siparişi iptal etti.'
+        : 'sipariş oturumunu kapattı.',
+  },
   { test: /^kitchen\.preparing$/, tone: 'info', icon: '🔵', text: () => 'siparişi hazırlamaya başladı.' },
   { test: /^kitchen\.ready$/, tone: 'success', icon: '🟢', text: () => 'siparişi hazır olarak işaretledi.' },
   { test: /^kitchen\.delivered$/, tone: 'secondary', icon: '🟣', text: () => 'siparişi teslim etti.' },

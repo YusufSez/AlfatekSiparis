@@ -53,6 +53,7 @@ model User {
   office         Office?              @relation(fields: [officeId], references: [id])
   openedSessions OrderSession[]       @relation("OpenedBy")
   orderLines     OrderLine[]
+  sessionSkips   SessionSkip[]
   auditLogs      AuditLog[]
   sessionEvents  SessionEvent[]
   notifications  UserNotification[]
@@ -94,6 +95,7 @@ model OrderSession {
   office   Office          @relation(fields: [officeId], references: [id])
   openedBy User            @relation("OpenedBy", fields: [openedById], references: [id])
   lines    OrderLine[]
+  skips    SessionSkip[]
   ticket   KitchenTicket?
   events   SessionEvent[]
 
@@ -106,6 +108,7 @@ model OrderLine {
   userId     String
   menuItemId String
   qty        Int      @default(1)
+  note       String?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -114,6 +117,19 @@ model OrderLine {
   menuItem MenuItem     @relation(fields: [menuItemId], references: [id])
 
   @@unique([sessionId, userId, menuItemId])
+}
+
+model SessionSkip {
+  id        String   @id @default(cuid())
+  sessionId String
+  userId    String
+  createdAt DateTime @default(now())
+
+  session OrderSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id])
+
+  @@unique([sessionId, userId])
+  @@index([sessionId])
 }
 
 model KitchenTicket {
