@@ -1,12 +1,20 @@
-export function EmptyState({ title, description, action, icon = '📭' }) {
+export function EmptyState({ title, description, action, icon = '📭', ctaLabel, onCta }) {
+  const cta =
+    action ||
+    (ctaLabel && onCta ? (
+      <button type="button" className="btn primary" onClick={onCta}>
+        {ctaLabel}
+      </button>
+    ) : null);
+
   return (
-    <section className="hero-panel empty-state-panel">
+    <section className="empty-state-panel card-surface">
       <div className="empty-icon" aria-hidden>
         {icon}
       </div>
-      <h1>{title}</h1>
-      {description && <p>{description}</p>}
-      {action}
+      <h2>{title}</h2>
+      {description && <p className="muted">{description}</p>}
+      {cta && <div className="empty-cta">{cta}</div>}
     </section>
   );
 }
@@ -17,6 +25,45 @@ export function Skeleton({ rows = 3, className = '' }) {
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="skeleton-row" style={{ width: `${92 - (i % 4) * 10}%` }} />
       ))}
+    </div>
+  );
+}
+
+export function CardSkeleton({ count = 6 }) {
+  return (
+    <div className="dash-grid dash-grid-hero" aria-busy="true">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="skeleton-card" />
+      ))}
+    </div>
+  );
+}
+
+export function TableSkeleton({ rows = 6, cols = 5 }) {
+  return (
+    <div className="table-wrap" aria-busy="true" aria-label="Tablo yükleniyor">
+      <table className="data-table">
+        <thead>
+          <tr>
+            {Array.from({ length: cols }).map((_, i) => (
+              <th key={i}>
+                <div className="skeleton-row" style={{ width: '70%' }} />
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {Array.from({ length: rows }).map((_, r) => (
+            <tr key={r}>
+              {Array.from({ length: cols }).map((_, c) => (
+                <td key={c}>
+                  <div className="skeleton-row" style={{ width: `${80 - c * 8}%` }} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

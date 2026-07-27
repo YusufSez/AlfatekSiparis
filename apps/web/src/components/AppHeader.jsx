@@ -2,24 +2,8 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import NotificationCenter from './NotificationCenter';
 import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
+import { homeFor, initials } from '../lib/format';
 import { roleLabel } from '../lib/uxLabels';
-
-function initials(name = '') {
-  return (
-    name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((p) => p[0]?.toUpperCase() || '')
-      .join('') || '?'
-  );
-}
-
-function homeFor(role) {
-  if (role === 'admin') return '/admin';
-  if (role === 'kitchen') return '/kitchen';
-  return '/office';
-}
 
 export default function AppHeader({ title, subtitle, accent, onLogout }) {
   const { user } = useAuth();
@@ -31,7 +15,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
   const links = [];
   if (user?.role === 'office_user') links.push({ to: '/office', label: 'Sipariş' });
   if (user?.role === 'admin') {
-    links.push({ to: '/admin', label: 'Admin' });
+    links.push({ to: '/admin/dashboard', label: 'Admin' });
     links.push({ to: '/kitchen', label: 'Mutfak' });
   }
   if (user?.role === 'kitchen') links.push({ to: '/kitchen', label: 'Mutfak' });
@@ -56,7 +40,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
               key={l.to}
               to={l.to}
               className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-              end={l.to !== '/admin'}
+              end={!l.to.startsWith('/admin')}
             >
               {l.label}
             </NavLink>

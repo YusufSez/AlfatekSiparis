@@ -2,34 +2,36 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useSocket } from '../lib/socket';
+import { useTheme } from '../lib/theme';
+import { useToast } from '../lib/toast';
 import AppHeader from '../components/AppHeader';
 import { Badge } from '../components/Badge';
-import { Skeleton, LoadError, EmptyState } from '../components/LoadStates';
+import Button from '../components/ui/Button';
+import { Skeleton, EmptyState } from '../components/LoadStates';
+import { formatDateTime, initials } from '../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../lib/uxLabels';
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
   const { connected } = useSocket();
+  const theme = useTheme();
+  const toast = useToast();
   const [profile, setProfile] = useState(null);
-  const [error, setError] = useState('');
   const [booting, setBooting] = useState(true);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
-  const [pwdMsg, setPwdMsg] = useState('');
-  const [pwdBusy, setPwdBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     api('/auth/profile')
       .then(setProfile)
-      .catch((e) => setError(e.message))
+      .catch((e) => toast.error(e.message))
       .finally(() => setBooting(false));
-  }, []);
+  }, [toast]);
 
   async function changePassword(e) {
     e.preventDefault();
-    setPwdBusy(true);
-    setPwdMsg('');
-    setError('');
+    setBusy(true);
     try {
       await api('/auth/password', {
         method: 'POST',
@@ -37,11 +39,11 @@ export default function ProfilePage() {
       });
       setCurrentPassword('');
       setNewPassword('');
-      setPwdMsg('Şifreniz güncellendi');
+      toast.success('Şifreniz güncellendi');
     } catch (err) {
-      setError(err.message);
+      toast.error(err.message);
     } finally {
-      setPwdBusy(false);
+      setBusy(false);
     }
   }
 
@@ -52,20 +54,15 @@ export default function ProfilePage() {
     <div className="page">
       <AppHeader title="Profilim" subtitle="Hesap bilgileriniz" onLogout={logout} />
       <main className="content">
-        <LoadError message={error} onRetry={() => window.location.reload()} />
         {booting ? (
           <Skeleton rows={7} />
         ) : !u ? (
-          <EmptyState icon="👤" title="Profil yüklenemedi" />
+          <EmptyState icon="👤" title="Profil yüklenemedi" ctaLabel="Yenile" onCta={() => window.location.reload()} />
         ) : (
           <div className="profile-layout">
             <section className="profile-hero card-surface">
               <div className="avatar xl" aria-hidden>
-                {(u.name || '?')
-                  .split(/\s+/)
-                  .slice(0, 2)
-                  .map((p) => p[0]?.toUpperCase() || '')
-                  .join('')}
+                {initials(u.name)}
               </div>
               <div>
                 <h2>{u.name}</h2>
@@ -80,7 +77,7 @@ export default function ProfilePage() {
                 <p className="muted tiny">{roleHint(u.role)}</p>
                 {u.createdAt && (
                   <p className="muted tiny">
-                    Hesap: {new Date(u.createdAt).toLocaleDateString('tr-TR')}
+                    Hesap: {formatDateTime(u.createdAt)}
                   </p>
                 )}
               </div>
@@ -88,27 +85,45 @@ export default function ProfilePage() {
 
             <section className="dash-grid profile-stats">
               <div className="dash-card">
-                <span>Açtığı sipariş</span>
-                <strong>{stats?.openedSessions ?? '—'}</strong>
-              </div>
-              <div className="dash-card">
                 <span>Katıldığı sipariş</span>
                 <strong>{stats?.joinedSessions ?? '—'}</strong>
+              </div>
+              <div className="dash-card">
+                <span>Açtığı sipariş</span>
+                <strong>{stats?.openedSessions ?? '—'}</strong>
               </div>
               <div className="dash-card">
                 <span>En çok istediği</span>
                 <strong>
                   {stats?.topProduct
-                    ? `${stats.topProduct.name} (${stats.topProduct.qty})`
+                    ? `${iconMeta(stats.topProduct.icon || 'cup').emoji} ${stats.topProduct.name}`
                     : '—'}
                 </strong>
               </div>
             </section>
 
             <section className="card-surface">
+              <h3 className="form-title">Tema</h3>
+              <div className="row-actions wrap">
+                <Button
+                  variant={!theme.isDark ? 'primary' : 'ghost'}
+                  onClick={() => theme.setTheme('light')}
+                >
+                  ☀ Açık
+                </Button>
+                <Button
+                  variant={theme.isDark ? 'primary' : 'ghost'}
+                  onClick={() => theme.setTheme('dark')}
+                >
+                  🌙 Koyu
+                </Button>
+              </div>
+            </section>
+
+            <section className="card-surface">
               <h3 className="form-title">Son siparişler</h3>
               {!stats?.recentOrders?.length ? (
-                <p className="muted">Henüz sipariş kaydı yok.</p>
+                <EmptyState icon="🧾" title="Henüz sipariş yok" description="İlk siparişiniz burada görünecek." />
               ) : (
                 <ul className="profile-orders">
                   {stats.recentOrders.map((o) => (
@@ -119,8 +134,7 @@ export default function ProfilePage() {
                           {o.qty}× {o.product}
                         </strong>
                         <div className="muted tiny">
-                          {o.office || '—'} · {o.status} ·{' '}
-                          {o.at ? new Date(o.at).toLocaleString('tr-TR') : ''}
+                          {o.office || '—'} · {o.status} · {o.at ? formatDateTime(o.at) : ''}
                         </div>
                       </div>
                     </li>
@@ -153,13 +167,11 @@ export default function ProfilePage() {
                     autoComplete="new-password"
                   />
                 </label>
-                {pwdMsg && <p className="toast inline-toast">{pwdMsg}</p>}
-                <button className="btn primary" type="submit" disabled={pwdBusy}>
-                  {pwdBusy ? 'Kaydediliyor…' : 'Şifreyi güncelle'}
-                </button>
+                <Button type="submit" variant="primary" loading={busy}>
+                  Şifreyi güncelle
+                </Button>
               </form>
             </section>
-
           </div>
         )}
       </main>

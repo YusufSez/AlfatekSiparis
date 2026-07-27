@@ -2,6 +2,13 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+/** SPA navigations (Accept: text/html) must not hit the API proxy. */
+function spaBypass(req) {
+  if (req.headers.accept?.includes('text/html')) {
+    return '/index.html';
+  }
+}
+
 export default defineConfig({
   plugins: [
     react(),
@@ -56,8 +63,14 @@ export default defineConfig({
     proxy: {
       '/auth': 'http://localhost:4000',
       '/sessions': 'http://localhost:4000',
-      '/kitchen': 'http://localhost:4000',
-      '/admin': 'http://localhost:4000',
+      '/kitchen': {
+        target: 'http://localhost:4000',
+        bypass: spaBypass,
+      },
+      '/admin': {
+        target: 'http://localhost:4000',
+        bypass: spaBypass,
+      },
       '/menu': 'http://localhost:4000',
       '/notifications': 'http://localhost:4000',
       '/announcements': 'http://localhost:4000',

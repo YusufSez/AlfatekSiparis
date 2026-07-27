@@ -1,12 +1,7 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../lib/auth';
-
-function homeFor(role) {
-  if (role === 'admin') return '/admin';
-  if (role === 'kitchen') return '/kitchen';
-  return '/office';
-}
+import { homeFor } from '../lib/format';
 
 export default function LoginPage() {
   const { login, user } = useAuth();
@@ -18,11 +13,19 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  function destination(u) {
+    const from = location.state?.from;
+    if (from && typeof from === 'string' && from !== '/login' && !from.startsWith('/login')) {
+      return from;
+    }
+    return homeFor(u.role);
+  }
+
   useEffect(() => {
     if (!user) return;
-    const from = location.state?.from;
-    navigate(from && from !== '/login' ? from : homeFor(user.role), { replace: true });
-  }, [user, navigate, location.state]);
+    navigate(destination(user), { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -30,8 +33,7 @@ export default function LoginPage() {
     setError('');
     try {
       const u = await login(username.trim(), password, remember);
-      const from = location.state?.from;
-      navigate(from && from !== '/login' ? from : homeFor(u.role), { replace: true });
+      navigate(destination(u), { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
