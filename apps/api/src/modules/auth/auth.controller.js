@@ -17,9 +17,35 @@ import {
   isAllowedUploadMime,
   saveAvatarBuffer,
 } from '../../common/avatarStorage.js';
-import { writeAudit } from '../orders/orders.domain.js';
+import { writeAudit, getPresenceForOffice } from '../orders/orders.domain.js';
+import { notificationService } from '../notifications/notification.service.js';
+import { SocketEvents } from '../../common/sessionEventType.js';
 
 const router = Router();
+
+/** Push fresh avatarUrl to office peers + admins via existing presence:update. */
+async function emitAvatarPresence(user) {
+  const avatarUser = {
+    id: user.id,
+    name: user.name,
+    username: user.username,
+    avatarUrl: user.avatarUrl || null,
+  };
+  if (user.officeId) {
+    const users = await getPresenceForOffice(user.officeId);
+    await notificationService.notify({
+      rooms: [`office:${user.officeId}`, 'admins'],
+      event: SocketEvents.PRESENCE_UPDATE,
+      payload: { officeId: user.officeId, users, avatarUser },
+    });
+    return;
+  }
+  await notificationService.notify({
+    rooms: ['admins', 'kitchen'],
+    event: SocketEvents.PRESENCE_UPDATE,
+    payload: { officeId: null, users: [], avatarUser },
+  });
+}
 
 router.post('/login', async (req, res, next) => {
   try {
@@ -203,6 +229,7 @@ router.post('/password', authMiddleware, async (req, res, next) => {
       .object({
         currentPassword: z.string().min(1),
         newPassword: z.string().min(8),
+        remember: z.boolean().optional(),
       })
       .safeParse(req.body);
     if (!parsed.success) throw httpError(400, 'Mevcut ve yeni şifre gerekli (min 8 karakter)');
@@ -210,15 +237,22 @@ router.post('/password', authMiddleware, async (req, res, next) => {
     const ok = await bcrypt.compare(parsed.data.currentPassword, req.user.passwordHash);
     if (!ok) throw httpError(400, 'Mevcut şifre hatalı');
 
-    await prisma.user.update({
+    const remember = parsed.data.remember !== false;
+    const user = await prisma.user.update({
       where: { id: req.user.id },
       data: {
         passwordHash: await bcrypt.hash(parsed.data.newPassword, 10),
         tokenVersion: { increment: 1 },
       },
+      include: { office: true },
     });
     await writeAudit(req.user.id, 'auth.password_change', {}, clientMeta(req));
-    res.json({ ok: true });
+    res.json({
+      ok: true,
+      token: signToken(user, { remember }),
+      user: publicUser(user),
+      expiresIn: remember ? '7d' : '1d',
+    });
   } catch (err) {
     next(err);
   }
@@ -266,6 +300,8 @@ router.post('/avatar', authMiddleware, handleAvatarMulter, async (req, res, next
       include: { office: true },
     });
 
+    await emitAvatarPresence(user);
+
     if (previousUrl && previousUrl !== avatarUrl) {
       deleteAvatarFile(previousUrl);
     }
@@ -285,6 +321,7 @@ router.delete('/avatar', authMiddleware, async (req, res, next) => {
       data: { avatarUrl: null },
       include: { office: true },
     });
+    await emitAvatarPresence(user);
     if (previousUrl) deleteAvatarFile(previousUrl);
     await writeAudit(req.user.id, 'auth.avatar_remove', {}, clientMeta(req));
     res.json({ user: publicUser(user) });

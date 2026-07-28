@@ -245,7 +245,13 @@ export default function KitchenPage() {
 
   const load = useCallback(
     async (signal) => {
-      await Promise.all([loadTickets(signal), loadHistory(signal)]);
+      // Tickets must refresh even if history fails (soft reconnect resilience)
+      await loadTickets(signal);
+      try {
+        await loadHistory(signal);
+      } catch (err) {
+        if (err?.name === 'AbortError' || signal?.aborted) throw err;
+      }
     },
     [loadTickets, loadHistory]
   );
@@ -264,16 +270,16 @@ export default function KitchenPage() {
     return () => ac.abort();
   }, [load]);
 
-  // Soft reconnect: active tickets only
+  // Soft reconnect: active tickets + history (deliveries during gap)
   useEffect(() => {
     if (reconnectKey === 0) return;
     const ac = new AbortController();
-    loadTickets(ac.signal).catch((e) => {
+    load(ac.signal).catch((e) => {
       if (e?.name === 'AbortError' || ac.signal.aborted) return;
       setError(e.message);
     });
     return () => ac.abort();
-  }, [loadTickets, reconnectKey]);
+  }, [load, reconnectKey]);
 
   useEffect(() => {
     const offNew = on('kitchen:new_ticket', (ticket) => {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import { api, getRememberLogin, setToken } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useSocketConnected } from '../../lib/socket';
 import { useTheme } from '../../lib/theme';
@@ -50,10 +50,16 @@ export default function AdminProfilePage() {
     e.preventDefault();
     setBusy(true);
     try {
-      await api('/auth/password', {
+      const remember = getRememberLogin();
+      const data = await api('/auth/password', {
         method: 'POST',
-        body: { currentPassword, newPassword },
+        body: { currentPassword, newPassword, remember },
       });
+      if (data?.token) {
+        setToken(data.token, { remember });
+        if (data.user) setUser(data.user);
+        window.dispatchEvent(new CustomEvent('auth:token-rotated'));
+      }
       setCurrentPassword('');
       setNewPassword('');
       toast.success('Şifreniz güncellendi');

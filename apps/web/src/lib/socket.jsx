@@ -38,6 +38,7 @@ export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
   const [reconnectKey, setReconnectKey] = useState(0);
+  const [tokenEpoch, setTokenEpoch] = useState(0);
   const handlers = useRef(new Map());
   const hadConnect = useRef(false);
 
@@ -45,6 +46,14 @@ export function SocketProvider({ children }) {
     if (!handlers.current.has(event)) handlers.current.set(event, new Set());
     handlers.current.get(event).add(fn);
     return () => handlers.current.get(event)?.delete(fn);
+  }, []);
+
+  useEffect(() => {
+    function onTokenRotated() {
+      setTokenEpoch((n) => n + 1);
+    }
+    window.addEventListener('auth:token-rotated', onTokenRotated);
+    return () => window.removeEventListener('auth:token-rotated', onTokenRotated);
   }, []);
 
   useEffect(() => {
@@ -59,7 +68,9 @@ export function SocketProvider({ children }) {
     }
 
     const s = io(resolveApiBaseUrl() || undefined, {
-      auth: { token: getToken() },
+      auth: (cb) => {
+        cb({ token: getToken() });
+      },
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: Infinity,
@@ -87,7 +98,7 @@ export function SocketProvider({ children }) {
     return () => {
       s.disconnect();
     };
-  }, [user?.id]);
+  }, [user?.id, tokenEpoch]);
 
   const apiValue = useMemo(() => ({ socket, on }), [socket, on]);
 

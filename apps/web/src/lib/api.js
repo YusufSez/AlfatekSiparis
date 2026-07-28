@@ -29,6 +29,11 @@ export function getToken() {
   return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
 }
 
+/** Prefer last login remember flag; default true when unset. */
+export function getRememberLogin() {
+  return localStorage.getItem(REMEMBER_KEY) !== '0';
+}
+
 export function setToken(token, { remember = true } = {}) {
   localStorage.removeItem(TOKEN_KEY);
   sessionStorage.removeItem(TOKEN_KEY);
@@ -104,11 +109,14 @@ export async function api(path, options = {}) {
 
   if (!res.ok) {
     // Login 401 = bad credentials — never wipe another tab's valid session.
-    // Only expire when an authenticated request is rejected.
+    // Only expire when an authenticated request is rejected AND the bearer
+    // is still the current token (ignore stale in-flight 401 after password rotate).
     if (res.status === 401 && !isAuthCredentialRequest(path)) {
-      clearAuthStorage();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('auth:expired'));
+      if (token && token === getToken()) {
+        clearAuthStorage();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth:expired'));
+        }
       }
     }
     if (import.meta.env.DEV && data?.error) {

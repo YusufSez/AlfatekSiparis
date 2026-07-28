@@ -402,7 +402,7 @@ export async function openSession(user, meta = {}) {
 
   const payload = await serializeSession(session);
   await notificationService.notify({
-    rooms: [`office:${user.officeId}`],
+    rooms: [`office:${user.officeId}`, 'admins'],
     event: SocketEvents.SESSION_OPENED,
     payload,
     requestId: meta.requestId,
@@ -652,7 +652,7 @@ export async function cancelSession(user, sessionId, meta = {}) {
 
   const payload = await serializeSession(closed);
   await notificationService.notify({
-    rooms: [`office:${session.officeId}`],
+    rooms: [`office:${session.officeId}`, 'admins'],
     event: SocketEvents.SESSION_CLOSED,
     payload,
     requestId: meta.requestId,
@@ -814,7 +814,7 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
     await writeAudit(actorId, SessionEventType.CLOSED, { sessionId, ...closedPayload }, meta);
     const payload = await serializeSession(outcome.updated);
     await notificationService.notify({
-      rooms: [`office:${outcome.officeId}`],
+      rooms: [`office:${outcome.officeId}`, 'admins'],
       event: SocketEvents.SESSION_CLOSED,
       payload,
       requestId: meta.requestId,
@@ -837,7 +837,7 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
   const ticketPayload = serializeTicket(ticket);
 
   await notificationService.notify({
-    rooms: [`office:${officeId}`],
+    rooms: [`office:${officeId}`, 'admins'],
     event: SocketEvents.SESSION_SENT,
     payload: sessionPayload,
     requestId: meta.requestId,

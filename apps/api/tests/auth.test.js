@@ -70,21 +70,24 @@ describe('AUTH', () => {
     expect(rem.exp - rem.iat).toBeGreaterThan(ses.exp - ses.iat);
   });
 
-  it('şifre değişince eski JWT reddedilir', async () => {
+  it('şifre değişince eski JWT reddedilir, yeni token çalışır', async () => {
     const login = await loginAs(request(app), 'yusuf', '123456');
     const oldToken = login.body.token;
     const change = await request(app)
       .post('/auth/password')
       .set(authHeader(oldToken))
-      .send({ currentPassword: '123456', newPassword: 'newpass99' });
+      .send({ currentPassword: '123456', newPassword: 'newpass99', remember: true });
     expect(change.status).toBe(200);
+    expect(change.body.token).toBeTruthy();
+    expect(change.body.expiresIn).toBe('7d');
 
     const meOld = await request(app).get('/auth/me').set(authHeader(oldToken));
     expect(meOld.status).toBe(401);
 
+    const meNew = await request(app).get('/auth/me').set(authHeader(change.body.token));
+    expect(meNew.status).toBe(200);
+
     const relogin = await loginAs(request(app), 'yusuf', 'newpass99');
     expect(relogin.status).toBe(200);
-    const meNew = await request(app).get('/auth/me').set(authHeader(relogin.body.token));
-    expect(meNew.status).toBe(200);
   });
 });

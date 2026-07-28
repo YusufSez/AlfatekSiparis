@@ -438,7 +438,7 @@ export default function OfficePage() {
   const [otherOpen, setOtherOpen] = useState(false);
   const [specialDraft, setSpecialDraft] = useState('');
   const [staffCallBusy, setStaffCallBusy] = useState(false);
-  const [staffCallCooldownUntil, setStaffCallCooldownUntil] = useState(0);
+  const [staffCallOnCooldown, setStaffCallOnCooldown] = useState(false);
   /** collecting | dispatching | collected | preparing | delivered | null */
   const [orderPhase, setOrderPhase] = useState(null);
   const [lastSentOrder, setLastSentOrder] = useState(null);
@@ -448,6 +448,12 @@ export default function OfficePage() {
   const specialDirty = useRef(false);
   /** Per menuItemId: coalesce rapid taps, serialize POSTs, always apply latest qty. */
   const lineQueuesRef = useRef(new Map());
+  /** Optimistic qty targets — taps read/write here so rapid +1 is not lost. */
+  const localQtyRef = useRef(new Map());
+  const [localQtyTick, setLocalQtyTick] = useState(0);
+  const staffCallCooldownTimer = useRef(null);
+  const sessionIdRef = useRef(null);
+  const orderPhaseRef = useRef(null);
   const timersRef = useRef(new Set());
 
   function scheduleTimeout(fn, ms) {
@@ -464,8 +470,21 @@ export default function OfficePage() {
       for (const id of timersRef.current) clearTimeout(id);
       timersRef.current.clear();
       if (specialSaveTimer.current) clearTimeout(specialSaveTimer.current);
+      if (staffCallCooldownTimer.current) clearTimeout(staffCallCooldownTimer.current);
     };
   }, []);
+
+  function startStaffCallCooldown(ms = 30_000) {
+    setStaffCallOnCooldown(true);
+    if (staffCallCooldownTimer.current) {
+      clearTimeout(staffCallCooldownTimer.current);
+      timersRef.current.delete(staffCallCooldownTimer.current);
+    }
+    staffCallCooldownTimer.current = scheduleTimeout(() => {
+      staffCallCooldownTimer.current = null;
+      setStaffCallOnCooldown(false);
+    }, ms);
+  }
 
   useEffect(() => {
     clearLegacyOrderHistoryKeys();
@@ -541,34 +560,42 @@ export default function OfficePage() {
     });
   }, [orderHistory, lastSentOrder]);
 
-  const load = useCallback(async (signal, { includePresence = true } = {}) => {
+  const load = useCallback(async (signal, { includePresence = true, soft = false } = {}) => {
     const reqs = [api('/sessions/active', { signal }), api('/menu', { signal })];
     if (includePresence) reqs.push(api('/sessions/presence', { signal }));
     const [active, menuRes, presenceRes] = await Promise.all(reqs);
     if (signal?.aborted) return;
-    setSession(active.session);
     setMenu(menuRes.items);
     if (includePresence) {
       setPresence(presenceRes?.users || active.session?.presence || []);
     } else if (active.session?.presence) {
       setPresence(active.session.presence);
     }
+
     if (active.session) {
+      setSession(active.session);
       setOrderPhase('collecting');
       const ev = await api(`/sessions/${active.session.id}/events`, { signal });
       if (signal?.aborted) return;
       setEvents(ev.events);
-    } else {
-      setEvents([]);
-      setOrderPhase(null);
-      setLastSentOrder(null);
+      return;
     }
+
+    // No collecting session
+    setSession(null);
+    setEvents([]);
+    if (soft) {
+      // Keep post-send UI: orderPhase, lastSentOrder, orderHistory / receipt
+      return;
+    }
+    setOrderPhase(null);
+    setLastSentOrder(null);
   }, []);
 
   // Initial boot: session + menu + presence
   useEffect(() => {
     const ac = new AbortController();
-    load(ac.signal, { includePresence: true })
+    load(ac.signal, { includePresence: true, soft: false })
       .catch((e) => {
         if (e?.name === 'AbortError' || ac.signal.aborted) return;
         setError(e.message);
@@ -582,11 +609,11 @@ export default function OfficePage() {
     return () => ac.abort();
   }, [load]);
 
-  // Soft reconnect: session + menu only (presence/history via socket / local cache)
+  // Soft reconnect: hydrate collecting session only; never wipe post-send UI
   useEffect(() => {
     if (reconnectKey === 0) return;
     const ac = new AbortController();
-    load(ac.signal, { includePresence: false }).catch((e) => {
+    load(ac.signal, { includePresence: false, soft: true }).catch((e) => {
       if (e?.name === 'AbortError' || ac.signal.aborted) return;
       setError(e.message);
     });
@@ -608,6 +635,16 @@ export default function OfficePage() {
           setSession(null);
           return;
         }
+        // Ignore late line-updates after send — do not revive collecting UI
+        const phase = orderPhaseRef.current;
+        if (
+          phase === 'dispatching' ||
+          phase === 'collected' ||
+          phase === 'preparing' ||
+          phase === 'delivered'
+        ) {
+          return;
+        }
         setSession(payload);
         setOrderPhase('collecting');
         if (payload?.presence) setPresence(payload.presence);
@@ -625,7 +662,32 @@ export default function OfficePage() {
       }),
       on('presence:update', (payload) => {
         if (payload?.officeId && payload.officeId === user.officeId) {
-          setPresence(payload.users || []);
+          const users = payload.users || [];
+          setPresence(users);
+          const byId = new Map(users.map((u) => [u.id, u]));
+          setSession((prev) => {
+            if (!prev || prev.officeId !== payload.officeId) return prev;
+            function patchUser(u) {
+              if (!u?.id || !byId.has(u.id)) return u;
+              const next = byId.get(u.id);
+              return { ...u, avatarUrl: next.avatarUrl ?? null, name: next.name || u.name };
+            }
+            return {
+              ...prev,
+              presence: users,
+              openedBy: patchUser(prev.openedBy),
+              lines: (prev.lines || []).map((l) => ({
+                ...l,
+                avatarUrl: byId.has(l.userId)
+                  ? byId.get(l.userId).avatarUrl ?? null
+                  : l.avatarUrl,
+                user: patchUser(l.user),
+              })),
+              participants: (prev.participants || []).map(patchUser),
+              pendingUsers: (prev.pendingUsers || []).map(patchUser),
+              skippedUsers: (prev.skippedUsers || []).map(patchUser),
+            };
+          });
         }
       }),
       on('kitchen:updated', (ticket) => {
@@ -673,6 +735,52 @@ export default function OfficePage() {
     return () => ac.abort();
   }, [session?.id]);
 
+  useEffect(() => {
+    sessionIdRef.current = session?.id || null;
+  }, [session?.id]);
+
+  useEffect(() => {
+    orderPhaseRef.current = orderPhase;
+  }, [orderPhase]);
+
+  // Live timeline: refetch events when session lines/skips/special change (not only on id change)
+  useEffect(() => {
+    let timer = null;
+    let fetchAc = null;
+    const off = on('session:updated', (payload) => {
+      if (!payload?.id) return;
+      const phase = orderPhaseRef.current;
+      if (
+        phase === 'dispatching' ||
+        phase === 'collected' ||
+        phase === 'preparing' ||
+        phase === 'delivered'
+      ) {
+        return;
+      }
+      const sid = payload.id;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        if (sessionIdRef.current !== sid) return;
+        if (fetchAc) fetchAc.abort();
+        fetchAc = new AbortController();
+        const { signal } = fetchAc;
+        api(`/sessions/${sid}/events`, { signal })
+          .then((ev) => {
+            if (signal.aborted || sessionIdRef.current !== sid) return;
+            setEvents(ev.events);
+          })
+          .catch(() => {});
+      }, 200);
+    });
+    return () => {
+      off();
+      if (timer) clearTimeout(timer);
+      if (fetchAc) fetchAc.abort();
+    };
+  }, [on]);
+
   const myQty = useMemo(() => {
     const map = {};
     if (!session) return map;
@@ -682,8 +790,23 @@ export default function OfficePage() {
     return map;
   }, [session, user.id]);
 
+  // Optimistic overlay — rapid taps read/write localQtyRef; tick forces re-render.
+  const displayMyQty = useMemo(() => {
+    const map = { ...myQty };
+    for (const [id, v] of localQtyRef.current.entries()) {
+      map[id] = v;
+    }
+    return map;
+  }, [myQty, localQtyTick]);
+
+  useEffect(() => {
+    localQtyRef.current.clear();
+    setLocalQtyTick((t) => t + 1);
+  }, [session?.id]);
+
   const isOpener = session?.openedBy?.id === user.id;
-  const myHasLines = session?.lines?.some((l) => l.userId === user.id && l.qty > 0);
+  const myHasLines =
+    Object.values(displayMyQty).some((v) => (v?.qty || 0) > 0);
   const mySkipped = session?.skippedUsers?.some((u) => u.id === user.id);
   const otherItem = useMemo(() => menu.find(isOtherItem), [menu]);
   const regularMenu = useMemo(() => menu.filter((item) => !isOtherItem(item)), [menu]);
@@ -757,12 +880,17 @@ export default function OfficePage() {
     if (!session) return;
     setError('');
     const sessionId = session.id;
+    const prevLocal = localQtyRef.current.get(menuItemId) || myQty[menuItemId] || { qty: 0, note: null };
+    const nextNote = note != null ? note : prevLocal.note;
+    localQtyRef.current.set(menuItemId, { qty, note: nextNote });
+    setLocalQtyTick((t) => t + 1);
+
     let q = lineQueuesRef.current.get(menuItemId);
     if (!q) {
       q = { latest: null, chain: Promise.resolve() };
       lineQueuesRef.current.set(menuItemId, q);
     }
-    q.latest = { qty, note, sessionId };
+    q.latest = { qty, note: nextNote, sessionId };
     q.chain = q.chain.then(async () => {
       while (q.latest) {
         const job = q.latest;
@@ -775,9 +903,23 @@ export default function OfficePage() {
             body,
           });
           setSession(data.session);
+          // Reconcile: drop optimistic override when no newer tap is queued
+          if (!q.latest) {
+            localQtyRef.current.delete(menuItemId);
+            setLocalQtyTick((t) => t + 1);
+            api(`/sessions/${job.sessionId}/events`)
+              .then((ev) => {
+                if (sessionIdRef.current === job.sessionId) setEvents(ev.events);
+              })
+              .catch(() => {});
+          }
         } catch (err) {
           if (err?.name === 'AbortError') return;
           setError(err.message);
+          if (!q.latest) {
+            localQtyRef.current.delete(menuItemId);
+            setLocalQtyTick((t) => t + 1);
+          }
         }
       }
     });
@@ -822,11 +964,11 @@ export default function OfficePage() {
     setError('');
     try {
       await api('/sessions/staff-call', { method: 'POST', body: {} });
-      setStaffCallCooldownUntil(Date.now() + 30_000);
+      startStaffCallCooldown(30_000);
       toast.success('Çağrı gönderildi');
     } catch (err) {
       if (err.status === 429) {
-        setStaffCallCooldownUntil(Date.now() + 30_000);
+        startStaffCallCooldown(30_000);
         toast.warning(err.message || 'Lütfen tekrar çağırmadan önce birkaç saniye bekleyin.');
       } else {
         setError(err.message);
@@ -839,12 +981,12 @@ export default function OfficePage() {
 
   async function tapItem(item) {
     if (isOtherItem(item)) {
-      const current = myQty[item.id];
+      const current = displayMyQty[item.id];
       setOtherDraft(current?.note || '');
       setOtherOpen(true);
       return;
     }
-    const qty = myQty[item.id]?.qty || 0;
+    const qty = displayMyQty[item.id]?.qty || 0;
     await setQty(item.id, qty + 1);
   }
 
@@ -855,7 +997,7 @@ export default function OfficePage() {
       setError('Diğer için açıklama yazın');
       return;
     }
-    const qty = myQty[otherItem.id]?.qty || 0;
+    const qty = displayMyQty[otherItem.id]?.qty || 0;
     await setQty(otherItem.id, Math.max(1, qty), note);
     setOtherOpen(false);
   }
@@ -1026,7 +1168,7 @@ export default function OfficePage() {
                     <button
                       type="button"
                       className="btn outline pressable staff-call-btn"
-                      disabled={busy || staffCallBusy || Date.now() < staffCallCooldownUntil}
+                      disabled={busy || staffCallBusy || staffCallOnCooldown}
                       onClick={callStaff}
                     >
                       Cemile Ablayı Çağır
@@ -1131,7 +1273,7 @@ export default function OfficePage() {
                       <button
                         type="button"
                         className="btn outline pressable staff-call-btn"
-                        disabled={busy || staffCallBusy || Date.now() < staffCallCooldownUntil}
+                        disabled={busy || staffCallBusy || staffCallOnCooldown}
                         onClick={callStaff}
                       >
                         Cemile Ablayı Çağır
@@ -1217,7 +1359,7 @@ export default function OfficePage() {
                   <p className="muted tiny">Karta dokunun — her dokunuş +1. Azaltmak için −.</p>
                   <div className="quick-order-grid tap-grid">
                     {regularMenu.map((item) => {
-                      const qty = myQty[item.id]?.qty || 0;
+                      const qty = displayMyQty[item.id]?.qty || 0;
                       return (
                         <div key={item.id} className={`quick-order-card tap-card pressable ${qty ? 'has-qty' : ''}`}>
                           {qty > 0 && <span className="qo-badge">{qty}</span>}
@@ -1267,19 +1409,19 @@ export default function OfficePage() {
 
                     {otherItem && (
                       <div
-                        className={`quick-order-card tap-card special other-card pressable ${myQty[otherItem.id]?.qty ? 'has-qty' : ''}`}
+                        className={`quick-order-card tap-card special other-card pressable ${displayMyQty[otherItem.id]?.qty ? 'has-qty' : ''}`}
                       >
-                        {(myQty[otherItem.id]?.qty || 0) > 0 && (
-                          <span className="qo-badge">{myQty[otherItem.id].qty}</span>
+                        {(displayMyQty[otherItem.id]?.qty || 0) > 0 && (
+                          <span className="qo-badge">{displayMyQty[otherItem.id].qty}</span>
                         )}
-                        {(myQty[otherItem.id]?.qty || 0) > 0 && (
+                        {(displayMyQty[otherItem.id]?.qty || 0) > 0 && (
                           <button
                             type="button"
                             className="qo-minus"
                             onClick={(e) => {
                               e.stopPropagation();
-                              const q = myQty[otherItem.id]?.qty || 0;
-                              const note = myQty[otherItem.id]?.note;
+                              const q = displayMyQty[otherItem.id]?.qty || 0;
+                              const note = displayMyQty[otherItem.id]?.note;
                               setQty(otherItem.id, Math.max(0, q - 1), q - 1 > 0 ? note : null);
                             }}
                             aria-label="Azalt"
@@ -1297,8 +1439,8 @@ export default function OfficePage() {
                             📝
                           </span>
                           <strong>Diğer</strong>
-                          {myQty[otherItem.id]?.note && (
-                            <em className="qo-state">{myQty[otherItem.id].note}</em>
+                          {displayMyQty[otherItem.id]?.note && (
+                            <em className="qo-state">{displayMyQty[otherItem.id].note}</em>
                           )}
                         </button>
                       </div>

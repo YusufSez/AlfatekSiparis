@@ -73,15 +73,22 @@ export function AdminDataProvider({ children }) {
     [applyKitchenCounts]
   );
 
-  /** Soft reconnect: kitchen counters only (presence via socket; static data kept). */
+  /** Soft reconnect: kitchen counters + office activeCollectingSessionId. */
   const softReconnect = useCallback(
     async (signal) => {
-      const k = await api('/kitchen/tickets', { signal }).catch((err) => {
-        if (err?.name === 'AbortError') throw err;
-        return { tickets: [] };
-      });
+      const [k, o] = await Promise.all([
+        api('/kitchen/tickets', { signal }).catch((err) => {
+          if (err?.name === 'AbortError') throw err;
+          return { tickets: [] };
+        }),
+        api('/admin/offices', { signal }).catch((err) => {
+          if (err?.name === 'AbortError') throw err;
+          return null;
+        }),
+      ]);
       if (signal?.aborted) return;
       applyKitchenCounts(k.tickets);
+      if (o?.offices) setOffices(o.offices);
     },
     [applyKitchenCounts]
   );
@@ -117,7 +124,29 @@ export function AdminDataProvider({ children }) {
 
   useEffect(() => {
     let dashboardTimer = null;
-    const off = on('presence:update', (payload) => {
+
+    function patchUserAvatars(avatarUser, presenceUsers) {
+      setUsers((prev) => {
+        let changed = false;
+        const next = prev.map((u) => {
+          if (avatarUser?.id === u.id) {
+            const url = avatarUser.avatarUrl ?? null;
+            if (u.avatarUrl === url) return u;
+            changed = true;
+            return { ...u, avatarUrl: url };
+          }
+          const fromPresence = presenceUsers?.find((p) => p.id === u.id);
+          if (fromPresence && (fromPresence.avatarUrl ?? null) !== (u.avatarUrl ?? null)) {
+            changed = true;
+            return { ...u, avatarUrl: fromPresence.avatarUrl ?? null };
+          }
+          return u;
+        });
+        return changed ? next : prev;
+      });
+    }
+
+    const offPresence = on('presence:update', (payload) => {
       const officeId = payload?.officeId;
       if (officeId) {
         setPresence((prev) =>
@@ -129,6 +158,10 @@ export function AdminDataProvider({ children }) {
         );
       }
 
+      if (payload?.avatarUser || (payload?.users && payload.users.length)) {
+        patchUserAvatars(payload.avatarUser, payload.users);
+      }
+
       if (dashboardTimer) clearTimeout(dashboardTimer);
       dashboardTimer = setTimeout(() => {
         dashboardTimer = null;
@@ -137,8 +170,36 @@ export function AdminDataProvider({ children }) {
           .catch(() => {});
       }, 2500);
     });
+
+    const offOpened = on('session:opened', (payload) => {
+      const officeId = payload?.officeId;
+      const sessionId = payload?.id;
+      if (!officeId || !sessionId) return;
+      setOffices((prev) =>
+        prev.map((o) =>
+          o.id === officeId ? { ...o, activeCollectingSessionId: sessionId } : o
+        )
+      );
+    });
+
+    const clearActive = (payload) => {
+      const officeId = payload?.officeId;
+      if (!officeId) return;
+      setOffices((prev) =>
+        prev.map((o) =>
+          o.id === officeId ? { ...o, activeCollectingSessionId: null } : o
+        )
+      );
+    };
+
+    const offSent = on('session:sent', clearActive);
+    const offClosed = on('session:closed', clearActive);
+
     return () => {
-      off();
+      offPresence();
+      offOpened();
+      offSent();
+      offClosed();
       if (dashboardTimer) clearTimeout(dashboardTimer);
     };
   }, [on]);
