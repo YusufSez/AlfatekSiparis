@@ -2,67 +2,19 @@
   <img src="images/alfatek.png" alt="Alfatek" width="120" />
 </p>
 
-<h1 align="center">Alfatek Ofis Sipariş Sistemi</h1>
+# Alfatek Sipariş Sistemi
 
-<p align="center">
-  Alfatek Ofis Sipariş Sistemi; Teknik Ofis ve Operasyon Ofisi çalışanlarının toplu içecek siparişlerini gerçek zamanlı olarak oluşturmasını, mutfak personelinin siparişleri kolayca yönetmesini sağlayan React PWA + Express tabanlı kurumsal sipariş yönetim sistemidir.
-</p>
+Alfatek Ofis Sipariş Sistemi; ofis çalışanlarının toplu içecek siparişlerini gerçek zamanlı oluşturmasını, mutfak personelinin siparişleri yönetmesini ve yöneticilerin sistemi izlemesini sağlayan React PWA + Express tabanlı kurumsal sipariş uygulamasıdır.
 
 | | |
 | --- | --- |
-| **Stack** | React PWA · Express · Prisma/SQLite · Socket.io |
-| **Web** | http://localhost:5173 |
-| **API** | http://localhost:4000 |
-| **Docs** | http://localhost:4000/docs *(yalnızca development)* |
+| **Web (prod)** | Nginx üzerinden domain / HTTPS |
+| **API** | `:4000` (reverse proxy arkası) |
 | **CI** | [![CI](https://github.com/YusufSez/AlfatekSiparis/actions/workflows/ci.yml/badge.svg)](https://github.com/YusufSez/AlfatekSiparis/actions/workflows/ci.yml) |
-| **Coverage** | ![Coverage](https://img.shields.io/badge/coverage-pending-lightgrey) *(placeholder — Codecov/Coveralls bağlanınca güncellenir)* |
 
 ---
 
-## Özellikler
-
-- Gerçek zamanlı sipariş yönetimi
-- Socket.io canlı bildirimler
-- React PWA (mobil kurulabilir)
-- Teknik / Operasyon ofisi ayrımı
-- Aynı anda tek aktif sipariş (ofis başına)
-- Kitchen paneli (new → preparing → ready → delivered)
-- Admin paneli (ofis, kullanıcı, menü, ayarlar, loglar)
-- Dashboard ve analitik kartlar
-- Global Search (kartlı sonuçlar)
-- Announcement (duyuru bandı)
-- Notification Center
-- Session Timeline
-- Presence (çoklu sekme desteği)
-- State Machine (session + ticket)
-- SessionEvent + AuditLog + `requestId`
-- Backup / Restore (modüler provider)
-- Prometheus Metrics (`/metrics`)
-- Health & Version endpointleri
-- Swagger UI (development)
-- Docker (dev) + Production Docker (multi-stage)
-- Test altyapısı (Vitest + Supertest)
-- Error Boundary
-- Offline banner, skeleton, retry
-
----
-
-## Ekran Görüntüleri
-
-> Placeholder — görseller `images/` klasörüne eklenecek.
-
-| Ekran | Önizleme |
-| ----- | -------- |
-| Giriş | ![Login](images/login.png) |
-| Ofis | ![Office](images/office.png) |
-| Mutfak | ![Kitchen](images/kitchen.png) |
-| Admin | ![Admin](images/admin.png) |
-| Dashboard | ![Dashboard](images/dashboard.png) |
-| Mobil | ![Mobile](images/mobile.png) |
-
----
-
-## Teknoloji Stack'i
+# Teknoloji Stack
 
 ### Frontend
 
@@ -74,22 +26,421 @@
 ### Backend
 
 - Node.js
-- Express (modüler Controller → Domain → Repository)
-- Prisma
-- SQLite *(PostgreSQL roadmap)*
+- Express
 - Socket.io
 
-### Infrastructure
+### Database
 
-- Docker & Docker Compose
-- Prometheus Metrics
-- Swagger / OpenAPI
+- SQLite
+- Prisma
 
-### Testing
+> PostgreSQL ayrı bir production servisi değildir. İlerideki migrasyon / roadmap maddesidir (aşağıdaki Roadmap).
 
-- Vitest
-- Supertest
-- `@vitest/coverage-v8`
+### Deployment
+
+- Docker
+- Docker Compose
+- Nginx
+- SSL (Certbot / Let’s Encrypt)
+
+---
+
+# Gereksinimler
+
+Sunucuda (VPS) olması gerekenler:
+
+- Ubuntu 22.04+
+- Docker
+- Docker Compose (v2: `docker compose`)
+- Git
+- Açık portlar: **80**, **443** (ve geçici kurulum için isteğe bağlı **4000**)
+- Domain adı (HTTPS / PWA / Web Push için önerilir)
+
+### Docker kurulumu (Ubuntu örneği)
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl git
+# Docker Engine + Compose plugin: https://docs.docker.com/engine/install/ubuntu/
+sudo usermod -aG docker $USER
+# Oturumu kapatıp yeniden açın
+docker --version
+docker compose version
+```
+
+---
+
+# Proje Kurulumu
+
+## 1. Repo klonlama
+
+```bash
+git clone https://github.com/YusufSez/AlfatekSiparis.git
+cd AlfatekSiparis
+```
+
+> Private repo ise SSH veya kişisel erişim tokeni kullanın.
+
+## 2. Environment oluşturma
+
+```bash
+cp .env.example .env
+nano .env   # veya vim / code
+```
+
+**Kurallar:**
+
+- Gerçek secret değerleri **repoya koyulmamalı**.
+- Production değerleri **yalnızca sunucuda** (veya gizli CI secret’larında) tanımlanmalı.
+- `.env` dosyası `.gitignore` içinde tutulmalıdır.
+
+Production için en azından şunları ayarlayın:
+
+```bash
+# Örnek — domainlerinizi yazın
+export JWT_SECRET="$(openssl rand -hex 32)"
+export CORS_ORIGIN="https://siparis.ornek.com"
+export VITE_API_URL="https://api.siparis.ornek.com"
+# veya tek domain + reverse proxy ile:
+# CORS_ORIGIN="https://siparis.ornek.com"
+# VITE_API_URL="https://siparis.ornek.com/api"  # proxy yolunuza göre
+```
+
+`docker compose -f docker-compose.prod.yml` bu değişkenleri host ortamından / `.env` dosyasından okur.
+
+---
+
+# Environment Değişkenleri
+
+`.env.example` özetidir. Production’da boş/placeholder bırakmayın.
+
+### API
+
+| Değişken | Zorunlu | Açıklama |
+| -------- | ------- | -------- |
+| `DATABASE_URL` | evet | **SQLite** dosya URL’si. Production compose: `file:./data/prod.db` → container içinde `apps/api/prisma/data/prod.db`, Docker volume `api_data` ile kalıcı |
+| `JWT_SECRET` | **evet (prod)** | JWT imza anahtarı; zayıf değer production boot’u reddeder. Güçlü rastgele üretin |
+| `PORT` | hayır | API portu (varsayılan `4000`) |
+| `NODE_ENV` | prod | `production` olmalı |
+| `HOST` | hayır | Bind adresi (varsayılan `0.0.0.0`) |
+| `CORS_ORIGIN` | önerilir | İzinli frontend origin(ler); virgülle çoklu |
+
+### Frontend (build-time)
+
+| Değişken | Zorunlu | Açıklama |
+| -------- | ------- | -------- |
+| `VITE_API_URL` | **prod build: evet** | Tarayıcının konuşacağı absolute API URL (örn. `https://api.siparis.ornek.com`) |
+| `VITE_VAPID_PUBLIC_KEY` | push için | Web Push aboneliği; `VAPID_PUBLIC_KEY` ile aynı olmalı |
+| `VITE_API_PORT` | hayır | Yalnızca development otomatik API portu |
+
+> `VITE_*` değişkenleri **image build sırasında** gömülür. Değiştirdikten sonra web imajını yeniden build edin:  
+> `docker compose -f docker-compose.prod.yml up -d --build`
+
+### Push (VAPID)
+
+| Değişken | Zorunlu | Açıklama |
+| -------- | ------- | -------- |
+| `VAPID_PUBLIC_KEY` | push için | `npx web-push generate-vapid-keys` ile üretin |
+| `VAPID_PRIVATE_KEY` | push için | Gizli; yalnızca API tarafında |
+| `VAPID_EMAIL` | önerilir | Örn. `mailto:admin@ornek.com` |
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Üretilen public key’i hem API (`VAPID_PUBLIC_KEY`) hem frontend build (`VITE_VAPID_PUBLIC_KEY`) için kullanın.  
+**Not:** Mevcut `docker-compose.prod.yml` VAPID env’lerini henüz geçirmiyorsa, compose dosyasına veya API container environment’ına eklemeniz gerekir; anahtarları mutlaka sunucuda tutun.
+
+---
+
+# Docker ile Çalıştırma
+
+### Production
+
+```bash
+cd AlfatekSiparis
+
+# Ortam değişkenlerini export edin veya proje kökünde .env kullanın
+export JWT_SECRET='uzun-rastgele-secret'
+export CORS_ORIGIN='https://siparis.ornek.com'
+export VITE_API_URL='https://api.siparis.ornek.com'
+
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+| Servis | Açıklama |
+| ------ | -------- |
+| `api` | Node + Prisma (`migrate deploy`) + Express (`:4000`), SQLite |
+| `web` | Multi-stage Vite build → Nginx static (`:80`) |
+
+**SQLite kalıcılığı:** `docker-compose.prod.yml` içinde `DATABASE_URL=file:./data/prod.db` ve volume `api_data` → `/app/apps/api/prisma/data`. Ayrı bir veritabanı container’ı yoktur.
+
+### Kontrol
+
+```bash
+docker ps
+docker compose -f docker-compose.prod.yml ps
+```
+
+### Log
+
+```bash
+docker compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.prod.yml logs -f api
+docker compose -f docker-compose.prod.yml logs -f web
+```
+
+### Durdur / yeniden başlat
+
+```bash
+docker compose -f docker-compose.prod.yml restart
+docker compose -f docker-compose.prod.yml down
+# Volume silmeden down: veri kalır
+# Volume dahil silme (DİKKAT — DB gider): docker compose -f docker-compose.prod.yml down -v
+```
+
+### Health
+
+```bash
+curl -s http://127.0.0.1:4000/health
+curl -s http://127.0.0.1:4000/version
+```
+
+---
+
+# Database İşlemleri
+
+Production **SQLite + Prisma** kullanır. Ayrı PostgreSQL / DB servisi çalıştırılmaz.
+
+Container açılışında otomatik:
+
+```text
+mkdir -p prisma/data → prisma migrate deploy → node src/index.js
+```
+
+### Migration
+
+Prisma migration’ları SQLite şemasına uygulanır:
+
+```bash
+npm run db:migrate -w apps/api
+# veya çalışan API container içinde:
+docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
+```
+
+### Seed (yalnızca geliştirme / ilk kurulum)
+
+```bash
+npm run db:seed -w apps/api
+```
+
+> **Uyarı:** Seed ve demo hesaplar production için uygun değildir. Production’da seed çalıştırmayın; kullanıcıları admin panelinden oluşturun veya güvenli bir bootstrap prosedürü kullanın.
+
+### Yedek (SQLite)
+
+```bash
+npm run backup
+# → backups/backup-YYYY-MM-DD-HH-mm.db
+npm run restore -- backup-YYYY-MM-DD-HH-mm.db
+```
+
+Docker’da: `api_data` volume’unu düzenli kopyalayın veya container içinden `prisma/data/prod.db` dosyasını alın.  
+`docker compose ... down -v` volume’u siler ve **tüm SQLite verisini yok eder**.
+
+---
+
+# Kullanıcılar
+
+İlk kurulum sonrası roller:
+
+| Rol | Ekran / yetki |
+| --- | ------------- |
+| **admin** | Yönetim paneli (ofis, kullanıcı, menü, ayarlar, loglar, dashboard) |
+| **office_user** | Ofis sipariş oluşturma, katılma, mutfağa gönderme |
+| **kitchen** | Mutfak ekranı, ticket durumları, eksik ürün bildirimi |
+
+Development seed demo hesapları (yalnızca local):
+
+| Kullanıcı | Rol | Şifre |
+| --------- | --- | ----- |
+| `admin` | Admin | `123456` |
+| `mutfak` | Kitchen | `123456` |
+| `yusuf` | Office User | `123456` |
+
+> Production’da demo şifreleri **asla** bırakmayın.
+
+---
+
+# Build Kontrolü
+
+Sunucuda veya CI’da image dışında doğrulama:
+
+### Frontend
+
+```bash
+npm install
+npm run build -w apps/web
+```
+
+### API
+
+```bash
+npm run build -w apps/api
+# veya test:
+npm test
+```
+
+Production imajları `Dockerfile` multi-stage ile build edilir; ayrı `npm run build` zorunlu değildir ama teslim öncesi doğrulama için önerilir.
+
+---
+
+# Reverse Proxy / SSL
+
+`docker-compose.prod.yml` web’i host **:80**’e, API’yi **:4000**’e map eder. Gerçek domain + HTTPS için sunucuda (veya ayrı container’da) Nginx / Caddy reverse proxy kullanın.
+
+### Nginx hedefleri
+
+- **Frontend:** static / SPA → `web:80` veya `127.0.0.1:80`
+- **API proxy:** `/` veya `api.` subdomain → `127.0.0.1:4000`
+- **WebSocket:** Socket.io için upgrade header’ları
+
+Örnek (host Nginx — tek domain, API `/api` altında değil, ayrı subdomain önerilir):
+
+```nginx
+# Frontend — siparis.ornek.com
+server {
+  listen 80;
+  server_name siparis.ornek.com;
+  location / {
+    proxy_pass http://127.0.0.1:80;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+
+# API + Socket.io — api.siparis.ornek.com
+server {
+  listen 80;
+  server_name api.siparis.ornek.com;
+
+  location / {
+    proxy_pass http://127.0.0.1:4000;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 86400;
+  }
+}
+```
+
+> Not: Compose `web` zaten 80’i kullanıyorsa host Nginx’i **443/başka port**’ta dinletin veya compose port map’ini `127.0.0.1:8080:80` yapıp dışarıyı host Nginx’e verin.
+
+### SSL (Certbot)
+
+```bash
+sudo apt install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d siparis.ornek.com -d api.siparis.ornek.com
+sudo certbot renew --dry-run
+```
+
+HTTPS sonrası:
+
+- `CORS_ORIGIN=https://siparis.ornek.com`
+- `VITE_API_URL=https://api.siparis.ornek.com`
+- Web imajını yeniden build edin
+
+---
+
+# Push Bildirim Sistemi
+
+- Web Push API kullanılır.
+- **HTTPS zorunludur** (localhost hariç).
+- VAPID anahtarları production ortamında tanımlanmalıdır.
+- Kullanıcı cihazları abonelik (`PushSubscription`) olarak API’de kaydedilir.
+- Profil / bildirim ayarlarından kullanıcı izin verir.
+- Service Worker (`sw.js`) arka planda push gösterir; uygulama açıkken duplicate azaltma mantığı vardır.
+
+Kurulum özeti:
+
+1. `npx web-push generate-vapid-keys`
+2. API’ye `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` / `VAPID_EMAIL`
+3. Web build’e `VITE_VAPID_PUBLIC_KEY`
+4. HTTPS doğrula → tarayıcıda bildirim izni → test siparişi
+
+---
+
+# Deployment Sonrası Kontrol Listesi
+
+- [ ] Domain açılıyor
+- [ ] HTTPS aktif
+- [ ] Frontend çalışıyor
+- [ ] API cevap veriyor (`/health`, `/version`)
+- [ ] SQLite bağlantısı var (API boot + `prod.db` / volume logları temiz)
+- [ ] Prisma migration tamam (`migrate deploy` hata vermiyor)
+- [ ] Admin giriş yapabiliyor
+- [ ] Ofis sipariş oluşturabiliyor
+- [ ] Mutfak siparişi görebiliyor
+- [ ] Push bildirim çalışıyor (HTTPS + VAPID)
+- [ ] PWA kurulabiliyor (HTTPS + manifest)
+- [ ] `JWT_SECRET` güçlü ve unique
+- [ ] Demo / seed kullanıcıları production’da yok veya şifreleri değiştirildi
+- [ ] `.env` git’te yok
+- [ ] Yedekleme planı var
+
+---
+
+# Güvenlik Notları
+
+- `.env` dosyaları repoya gönderilmemeli.
+- Secret anahtarları (`JWT_SECRET`, `VAPID_PRIVATE_KEY`) değiştirilmeden / örnek değerlerle kullanılmamalı.
+- SQLite dosyası / `api_data` volume dışarıya (public port) açık bırakılmamalı; yalnızca API container erişsin.
+- Production’da debug / Swagger (`/docs`) kapalıdır.
+- `NODE_ENV=production` kullanın.
+- Güvenlik duvarında yalnızca 80/443 (ve SSH) açık tutun; API’yi mümkünse localhost / private network’te tutup reverse proxy ile yayınlayın.
+- Düzenli yedek alın; restore prosedürünü bir kez test edin.
+
+---
+
+# Yerel Geliştirme (özet)
+
+```bash
+npm install
+cp .env.example .env
+npm run db:setup
+npm run dev:api   # :4000
+npm run dev:web   # :5173
+```
+
+Docker development:
+
+```bash
+docker compose up
+```
+
+Detaylı telefon/LAN testi, API tablosu, socket eventleri ve monitoring için aşağıdaki bölümlere bakın.
+
+---
+
+## Özellikler
+
+- Gerçek zamanlı sipariş yönetimi (Socket.io)
+- React PWA (mobil kurulabilir)
+- Ofis / mutfak / admin rolleri
+- Ofis başına tek aktif sipariş
+- Kitchen paneli (new → preparing → delivered)
+- Admin dashboard, arama, duyurular, loglar
+- Notification Center + Web Push
+- Session timeline, presence
+- State machine (session + ticket)
+- Backup / restore (SQLite)
+- Prometheus metrics (`/metrics`)
+- Health & version endpointleri
 
 ---
 
@@ -110,13 +461,8 @@ flowchart TD
   D --> PS[PresenceService]
 ```
 
-Uygulama katmanları:
-
 ```text
 Controller → Domain → Repository
-PresenceService → MemoryPresenceProvider
-NotificationService → SocketAdapter
-State Machine → session / ticket transitions
 ```
 
 ---
@@ -126,380 +472,36 @@ State Machine → session / ticket transitions
 ```text
 order/
 ├── apps/
-│   ├── api/
-│   │   ├── prisma/              # schema, migrations, seed
-│   │   ├── scripts/             # backup.js, restore.js
-│   │   ├── src/
-│   │   │   ├── common/          # auth, db, metrics, stateMachine, openapi
-│   │   │   ├── modules/         # auth, orders, kitchen, admin, menu…
-│   │   │   └── realtime/        # socket.io
-│   │   └── tests/               # Vitest + Supertest
-│   └── web/
-│       ├── public/
-│       ├── nginx.conf
-│       └── src/
-│           ├── pages/           # Login, Office, Kitchen, Admin
-│           ├── components/      # SearchResults, LoadStates…
-│           └── lib/             # api, auth, socket
-├── backups/                     # SQLite yedekleri
-├── bruno/                       # API örnekleri
-├── docs/                        # ek dokümantasyon (opsiyonel)
-├── images/                      # README ekran görüntüleri
-├── docker-compose.yml           # development
-├── docker-compose.prod.yml      # production
-├── Dockerfile                   # multi-stage: api + web
+│   ├── api/          # Express + Prisma + Socket.io
+│   └── web/          # React Vite PWA + nginx.conf
+├── docker-compose.yml
+├── docker-compose.prod.yml
+├── Dockerfile
+├── .env.example
 └── README.md
 ```
 
 ---
 
-## Kurulum
-
-### 1. Bağımlılıklar
-
-```bash
-npm install
-cp .env.example .env
-```
-
-`.env` içinde en azından `JWT_SECRET`, `DATABASE_URL` ve `CORS_ORIGIN` tanımlayın.
-
-### 2. Veritabanı
-
-```bash
-npm run db:setup
-```
-
-Bu komut `prisma migrate deploy`, `prisma generate` ve seed çalıştırır.
-
-**Development schema değişikliği:**
-
-```bash
-npm run db:migrate:dev
-```
-
-**Production / CI:**
-
-```bash
-npm run db:migrate
-```
-
-> Eski `db push` ile oluşmuş SQLite için bir kez:  
-> `cd apps/api && npx prisma migrate resolve --applied 20260727100000_init`
-
-### 3. Geliştirme sunucuları
-
-```bash
-npm run dev:api   # 0.0.0.0:4000 — Local + Network URL terminalde
-npm run dev:web   # --host :5173 — Local + Network URL terminalde
-```
-
-Girişte **Beni hatırla** (varsayılan açık) → 7 gün JWT; kapalıysa `sessionStorage` + 1 gün token.
-
----
-
-## Telefondan Test
-
-Aynı Wi-Fi üzerindeki telefonlardan geliştirme sunucusunu test etmek için:
-
-### 1. Bilgisayarda sunucuları başlatın
-
-```bash
-npm run dev:api
-npm run dev:web
-```
-
-Vite terminalinde benzer çıktı görünür:
+## Sipariş Akışı (özet)
 
 ```text
-  ➜  Local:   http://localhost:5173/
-  ➜  Network: http://192.168.1.42:5173/
+Sipariş Aç → Katılım → Onay / Timeout → Kitchen
+  → Hazırlanıyor → Teslim
 ```
 
-API terminalinde:
-
-```text
-Local   http://localhost:4000
-Network http://192.168.1.42:4000
-```
-
-### 2. Telefonda Network URL’yi açın
-
-Örnek: `http://192.168.1.42:5173`
-
-Frontend development’ta API adresini **otomatik** üretir (`sayfa hostname` + port `4000`).  
-`apps/web/.env` içinde `VITE_API_URL` boş bırakılmalıdır (veya `apps/web/.env.local.example` dosyasına bakın).
-
-### 3. Windows Güvenlik Duvarı
-
-İlk erişimde Windows, Node.js için ağ izni isteyebilir — **özel ağlarda izin verin**.  
-Manuel: Gelen kurallarında TCP **5173** ve **4000** portlarını açın.
-
-### 4. Kontrol listesi
-
-| Kontrol | |
-| --- | --- |
-| Telefon ve PC aynı Wi-Fi’de | ✓ |
-| Vite `Network` URL telefon tarayıcısında | ✓ |
-| API `0.0.0.0` dinliyor (`HOST` varsayılan) | ✓ |
-| CORS development’ta LAN `*:5173` origin’lerine açık | ✓ |
-| Socket.io aynı host:4000 | ✓ |
-
-Sorun olursa:
-
-1. PC’de `http://<LAN-IP>:4000/health` telefon tarayıcısından açılabiliyor mu?
-2. `VITE_API_URL=http://localhost:4000` sabitse kaldırın / boşaltın (telefonda localhost telefona gider).
-3. VPN / misafir Wi-Fi cihazlar arası izolasyonu kapatın.
-
 ---
 
-## Docker
+## API (özet)
 
-### Development
-
-```bash
-docker compose up
-```
-
-- Web: http://localhost:5173  
-- API: http://localhost:4000  
-- Seed + hot reload
-
-### Production
-
-```bash
-export JWT_SECRET='uzun-rastgele-secret'
-export CORS_ORIGIN='https://siparis.ornek.com'
-export VITE_API_URL='https://api.siparis.ornek.com'
-
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
-| Özellik | Development | Production |
-| ------- | ----------- | ---------- |
-| Image | Node bind-mount | Multi-stage (`api` + nginx `web`) |
-| `NODE_ENV` | development | `production` |
-| `JWT_SECRET` | `docker-dev-secret` | **zorunlu / güçlü** |
-| Seed | çalışır | çalışmaz |
-| Migrate | `db:setup` | container start: `migrate deploy` |
-| Swagger `/docs` | açık | kapalı |
-
----
-
-## Demo Hesapları
-
-| Kullanıcı | Rol | Ofis |
-| --------- | --- | ---- |
-| `admin` | Admin | — |
-| `mutfak` | Kitchen | — |
-| `yusuf` | Office User | Teknik Ofis |
-| `ahmet` | Office User | Teknik Ofis |
-| `mehmet` | Office User | Teknik Ofis |
-| `murat` | Office User | Operasyon Ofisi |
-| `veli` | Office User | Operasyon Ofisi |
-
-**Şifre (tümü):** `123456`
-
-> **Uyarı:** Demo hesaplar ve seed yalnızca yerel/geliştirme içindir. Production ortamında kullanılmamalıdır.
-
----
-
-## Roller
-
-| Rol | Yetkiler |
-| --- | -------- |
-| **Admin** | Ofis / kullanıcı / menü / ayar CRUD, dashboard, search, loglar, duyurular, presence; kitchen ticket yönetimi; tüm ofisleri görme |
-| **Kitchen** | Aktif ticket listesi; durum geçişleri (`preparing` → `ready` → `delivered`); canlı `kitchen:*` eventleri |
-| **Office User** | Kendi ofisinde sipariş açma, kalem ekleme/çıkarma, katılma/ayrılma; opener onaylama; ofis presence ve timeline |
-
----
-
-## Sipariş Akışı
-
-```mermaid
-sequenceDiagram
-  participant O as Ofis Kullanıcısı
-  participant API as Express API
-  participant S as Socket.io
-  participant K as Mutfak
-
-  O->>API: Sipariş aç (POST /sessions)
-  API->>S: session:opened / session:updated
-  S-->>O: Bildirim (ofis odası)
-  O->>API: Kalem ekle / güncelle
-  API->>S: session:updated
-  O->>API: Onayla (POST .../confirm)
-  API->>API: collecting → sent + KitchenTicket
-  API->>S: session:sent, kitchen:new_ticket
-  S-->>K: Yeni ticket
-  K->>API: preparing
-  API->>S: kitchen:updated
-  K->>API: ready
-  API->>S: kitchen:updated
-  K->>API: delivered
-  API->>S: kitchen:updated
-```
-
-Özet:
-
-```text
-Sipariş Aç → Bildirim → Katılım → Onay → Kitchen
-  → Hazırlanıyor → Hazır → Teslim
-```
-
-Timeout: süre dolunca (ayarlara göre) mutfağa gönderilir veya oturum kapanır.
-
----
-
-## API
-
-| Grup | Endpoint | Açıklama |
-| ---- | -------- | -------- |
-| **Auth** | `POST /auth/login` | Giriş (`remember` opsiyonel) |
-| | `GET /auth/me` | JWT ile kullanıcı |
-| **Sessions** | `GET /sessions/active` | Aktif collecting oturum |
-| | `GET /sessions/presence` | Ofis presence |
-| | `POST /sessions` | Sipariş aç |
-| | `POST /sessions/:id/lines` | Kalem upsert / sil (`qty: 0`) |
-| | `POST /sessions/:id/leave` | Siparişten çık |
-| | `POST /sessions/:id/confirm` | Mutfağa gönder |
-| | `GET /sessions/:id/events` | Timeline |
-| **Kitchen** | `GET /kitchen/tickets` | Aktif ticketlar |
-| | `PATCH /kitchen/tickets/:id` | Durum güncelle |
-| **Notifications** | `GET /notifications` | Bildirim listesi |
-| | `POST /notifications/read-all` | Tümünü okundu |
-| **Admin** | `GET /admin/dashboard` | Kartlar + grafikler |
-| | `GET /admin/search?q=` | Global arama |
-| | `/admin/offices`, `/users`, `/menu-items`, `/settings`, `/logs`, `/presence` | Yönetim |
-| **Announcements** | `GET /announcements/active` | Aktif duyurular |
-| | CRUD `/announcements` | Admin |
-| **Menu / Settings** | `GET /menu`, `GET /menu/settings/public` | Menü + public ayarlar |
-| **System** | `GET /health` | Sağlık |
-| | `GET /version` | Sürüm bilgisi |
-| | `GET /metrics` | Prometheus |
-| **Docs** | `GET /docs`, `GET /openapi.json` | Swagger *(dev only)* |
-
-Bruno örnek: `bruno/health-login.bru`
-
----
-
-## Socket Eventleri
-
-| Event | Publisher | Subscriber | Description |
-| ----- | --------- | ---------- | ----------- |
-| `connected` | API | Client | Bağlantı onayı |
-| `session:opened` | API | Office | Yeni sipariş oturumu |
-| `session:updated` | API | Office | Kalem / presence güncellemesi |
-| `session:sent` | API | Office | Mutfağa gönderildi |
-| `session:closed` | API | Office | Oturum kapandı |
-| `kitchen:new_ticket` | API | Kitchen / Admin | Yeni ticket |
-| `kitchen:updated` | API | Kitchen / Office / Admin | Ticket durumu |
-| `presence:update` | API | Office / Admin | Online kullanıcı listesi |
-| `notification:new` | API | User | Kullanıcı bildirimi |
-| `announcement:updated` | API | Office / Kitchen / Admin | Duyuru yenile |
-
----
-
-## Ortam Değişkenleri
-
-`.env.example` özeti:
-
-| Değişken | Zorunlu | Örnek / Varsayılan | Açıklama |
-| -------- | ------- | ------------------ | -------- |
-| `PORT` | hayır | `4000` | API portu |
-| `HOST` | hayır | `0.0.0.0` | API bind adresi (LAN için `0.0.0.0`) |
-| `NODE_ENV` | prod | `development` / `production` | Ortam |
-| `JWT_SECRET` | **prod: evet** | `change-me-in-production` | JWT imza; prod’da zayıf değer → boot reddedilir |
-| `DATABASE_URL` | evet | `file:./dev.db` | Prisma bağlantısı |
-| `CORS_ORIGIN` | önerilir | `http://localhost:5173` | İzinli origin (virgülle çoklu); **dev’de LAN Vite origin’leri otomatik** |
-| `BUILD_DATE` | hayır | — | `/version` |
-| `GIT_COMMIT` | hayır | — | `/version` |
-| `VITE_API_URL` | web build | *(dev’de boş = otomatik hostname:4000)* | Frontend API adresi |
-| `VITE_API_PORT` | hayır | `4000` | Dev otomatik API portu |
-
----
-
-## Test
-
-```bash
-npm test
-npm run test:coverage
-```
-
-| | |
-| --- | --- |
-| **Araçlar** | Vitest + Supertest |
-| **Rapor** | `apps/api/coverage/` |
-| **Kapsam** | Auth, state machine, session (açma / 409 / line / confirm / timeout / race), kitchen + socket, NotificationService, Presence (multi-tab), metrics |
-| **CI** | Her `push` / `pull_request` → `main` üzerinde GitHub Actions (`.github/workflows/ci.yml`) |
-
-Coverage badge şu an placeholder’dır; Codecov / Coveralls bağlandığında güncellenebilir.
-
----
-
-## Monitoring
-
-| Endpoint | Format | İçerik |
-| -------- | ------ | ------ |
-| `GET /health` | JSON | `database`, `socket`, `uptime`, `version` — degraded ise `503` |
-| `GET /version` | JSON | sürüm, `NODE_ENV`, Node, DB tipi, commit |
-| `GET /metrics` | Prometheus text | uptime, active sessions, online users, today orders/tickets, memory, CPU, event loop delay, request count, avg response time |
-
-Örnek metrikler: `app_uptime_seconds`, `app_active_sessions`, `app_online_users`, `http_requests_total`, `nodejs_eventloop_delay_mean_ms`.
-
----
-
-## Backup & Restore
-
-### Backup
-
-```bash
-npm run backup
-# → backups/backup-YYYY-MM-DD-HH-mm.db
-```
-
-### Restore
-
-```bash
-npm run restore -- backup-2026-07-27-10-00.db
-# veya mutlak yol
-npm run restore -- C:\path\to\backup.db
-```
-
-- Restore öncesi mevcut DB `.pre-restore-<timestamp>` olarak kopyalanır.
-- Provider arayüzü: `SqliteBackupProvider` / `SqliteRestoreProvider`
-- PostgreSQL için stub: `PostgresBackupProvider` / `PostgresRestoreProvider` (`pg_dump` / `pg_restore` ile genişletilir)
-
----
-
-## Production Deployment
-
-### Özet adımlar
-
-1. Güçlü `JWT_SECRET` tanımlayın  
-2. `CORS_ORIGIN` ve `VITE_API_URL` production origin’leri  
-3. HTTPS (PWA zorunlu)  
-4. `prisma migrate deploy` (veya prod compose start)  
-5. Seed / demo kullanıcı **çalıştırmayın / silin**  
-6. `/health`, `/version`, `/metrics` izleyin  
-7. Periyodik `npm run backup`  
-
-### Production Checklist
-
-- [ ] HTTPS aktif (PWA)
-- [ ] `JWT_SECRET` güçlü ve env’de
-- [ ] `NODE_ENV=production`
-- [ ] `CORS_ORIGIN` doğru
-- [ ] `prisma migrate deploy` uygulandı
-- [ ] Seed production’da yok
-- [ ] Demo kullanıcılar kaldırıldı / şifreler değiştirildi
-- [ ] Swagger `/docs` kapalı (otomatik)
-- [ ] Backup cron / schedule
-- [ ] Restore prosedürü dokümante ve test edildi
-- [ ] `/health` + `/metrics` monitoring’e bağlı
-- [ ] Docker production compose kullanılıyor
-- [ ] `npm test` yeşil
-- [ ] Tek API process veya Redis presence planı
+| Grup | Örnek |
+| ---- | ----- |
+| Auth | `POST /auth/login`, `GET /auth/me` |
+| Sessions | `POST /sessions`, lines, confirm, events |
+| Kitchen | `GET /kitchen/tickets`, `PATCH /kitchen/tickets/:id` |
+| Notifications | `GET /notifications`, push subscribe |
+| Admin | dashboard, offices, users, menu, logs |
+| System | `GET /health`, `GET /version`, `GET /metrics` |
 
 ---
 
@@ -508,7 +510,7 @@ npm run restore -- C:\path\to\backup.db
 | Sürüm | Hedef |
 | ----- | ----- |
 | **v1.1** | Redis Presence + Socket.IO adapter (multi-instance) |
-| **v1.2** | PostgreSQL + `pg_dump` / `pg_restore` |
+| **v1.2** | SQLite → PostgreSQL migrasyonu + `pg_dump` / `pg_restore` |
 | **v1.3** | Mail / Teams / Slack notification adapter’ları |
 | **v2.0** | Category, Stock, gelişmiş Analytics |
 
