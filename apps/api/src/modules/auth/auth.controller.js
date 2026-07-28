@@ -9,6 +9,7 @@ import {
   signToken,
 } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
+import { parseTicketSummaryJson } from '../../common/ticketSummary.js';
 import { writeAudit } from '../orders/orders.domain.js';
 
 const router = Router();
@@ -97,11 +98,11 @@ router.get('/profile', authMiddleware, async (req, res, next) => {
           const ticket = byId.get(id);
           const meta = ticketMeta.get(id);
           if (!ticket || !meta) return null;
-          let summary = [];
+          let summaryItems = [];
           try {
-            summary = JSON.parse(ticket.summaryJson || '[]');
+            summaryItems = parseTicketSummaryJson(ticket.summaryJson || '[]').summary;
           } catch {
-            summary = [];
+            summaryItems = [];
           }
           return {
             id: ticket.id,
@@ -109,7 +110,7 @@ router.get('/profile', authMiddleware, async (req, res, next) => {
             status: ticket.status,
             action: meta.action,
             at: meta.at || ticket.updatedAt,
-            summary: summary.map((s) => `${s.qty}× ${s.name}`).join(', '),
+            summary: summaryItems.map((s) => `${s.qty}× ${s.name}`).join(', '),
           };
         })
         .filter(Boolean);

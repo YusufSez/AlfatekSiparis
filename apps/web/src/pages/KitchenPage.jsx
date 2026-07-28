@@ -19,29 +19,12 @@ const STATUS_LABEL = {
 
 const STATUS_RANK = { new: 0, preparing: 1, delivered: 2 };
 
-function playBeep(enabled) {
-  if (!enabled) return;
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.value = 880;
-    g.gain.value = 0.08;
-    o.connect(g);
-    g.connect(ctx.destination);
-    o.start();
-    setTimeout(() => {
-      o.stop();
-      ctx.close();
-    }, 260);
-  } catch {
-    /* ignore */
-  }
+function asSummaryList(summary) {
+  return Array.isArray(summary) ? summary : [];
 }
 
 function itemCount(ticket) {
-  return (ticket.summary || []).reduce((sum, s) => sum + (s.qty || 0), 0);
+  return asSummaryList(ticket.summary).reduce((sum, s) => sum + (s.qty || 0), 0);
 }
 
 function personCount(ticket) {
@@ -50,17 +33,30 @@ function personCount(ticket) {
 }
 
 function summaryText(ticket) {
-  return (ticket.summary || []).map((s) => `${s.qty}× ${s.name}`).join(', ');
+  return asSummaryList(ticket.summary)
+    .map((s) => `${s.qty}× ${s.name}`)
+    .join(', ');
 }
 
-function collectSpecialNotes(summary) {
+function collectSpecialNotes(ticket) {
   const notes = [];
-  for (const s of summary || []) {
+  const seen = new Set();
+  function push(note, userName) {
+    if (!note) return;
+    const key = `${userName || ''}::${note}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    notes.push({ userName: userName || null, note });
+  }
+  for (const r of ticket?.specialRequests || []) {
+    push(r.note, r.userName);
+  }
+  for (const s of asSummaryList(ticket?.summary)) {
     const isOther =
       s.icon === 'other' || String(s.name || '').toLocaleLowerCase('tr') === 'diğer';
     if (!isOther || !s.notes?.length) continue;
     for (const n of s.notes) {
-      notes.push({ userName: n.userName, note: n.note });
+      push(n.note, n.userName);
     }
   }
   return notes;
@@ -98,7 +94,7 @@ function OfficeBanner({ office }) {
 }
 
 function TicketProducts({ summary }) {
-  const regular = (summary || []).filter(
+  const regular = asSummaryList(summary).filter(
     (s) => !(s.icon === 'other' || String(s.name || '').toLocaleLowerCase('tr') === 'diğer')
   );
   return (
@@ -147,7 +143,6 @@ export default function KitchenPage() {
   const [tickets, setTickets] = useState([]);
   const [history, setHistory] = useState([]);
   const [expanded, setExpanded] = useState({});
-  const [soundOn, setSoundOn] = useState(true);
   const [error, setError] = useState('');
   const [booting, setBooting] = useState(true);
   const [leaving, setLeaving] = useState({});
@@ -166,14 +161,12 @@ export default function KitchenPage() {
   }, [tickets]);
 
   const load = useCallback(async () => {
-    const [data, hist, settings] = await Promise.all([
+    const [data, hist] = await Promise.all([
       api('/kitchen/tickets'),
       api('/kitchen/tickets?status=delivered&take=20'),
-      api('/menu/settings/public').catch(() => ({ settings: { notificationSound: true } })),
     ]);
     setTickets(data.tickets);
     setHistory(hist.tickets || []);
-    setSoundOn(settings.settings?.notificationSound !== false);
   }, []);
 
   useEffect(() => {
@@ -188,8 +181,13 @@ export default function KitchenPage() {
         if (prev.some((t) => t.id === ticket.id)) return prev;
         return [ticket, ...prev];
       });
-      playBeep(soundOn);
+      // Special order sound + OS toast → notification:new (playSound)
       if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+    });
+    const offStaffCall = on('kitchen:staff_call', (payload) => {
+      const office = payload?.officeName || 'Ofis';
+      toast.info(`${office} sizi bekliyor.`);
+      if (navigator.vibrate) navigator.vibrate([100, 40, 100]);
     });
     const offUpd = on('kitchen:updated', (ticket) => {
       if (inFlightRef.current.has(ticket.id)) return;
@@ -227,9 +225,10 @@ export default function KitchenPage() {
     });
     return () => {
       offNew();
+      offStaffCall();
       offUpd();
     };
-  }, [on, soundOn]);
+  }, [on, toast]);
 
   async function undoDeliver(ticket) {
     if (!ticket?.id || inFlightRef.current.has(ticket.id)) return;
@@ -319,7 +318,7 @@ export default function KitchenPage() {
 
   function openShortage(ticket) {
     const selected = {};
-    for (const s of ticket.summary || []) {
+    for (const s of asSummaryList(ticket.summary)) {
       if (s.menuItemId) selected[s.menuItemId] = false;
     }
     setShortageSelected(selected);
@@ -333,7 +332,7 @@ export default function KitchenPage() {
 
   async function submitShortage() {
     if (!shortageTicket) return;
-    const items = (shortageTicket.summary || [])
+    const items = asSummaryList(shortageTicket.summary)
       .filter((s) => shortageSelected[s.menuItemId])
       .map((s) => ({ menuItemId: s.menuItemId, name: s.name }));
     if (!items.length) {
@@ -414,7 +413,7 @@ export default function KitchenPage() {
           <div className="ticket-grid kitchen-queue">
             {tickets.map((ticket) => {
               const action = nextAction[ticket.status];
-              const specialNotes = collectSpecialNotes(ticket.summary);
+              const specialNotes = collectSpecialNotes(ticket);
               return (
                 <article
                   key={ticket.id}
@@ -516,7 +515,7 @@ export default function KitchenPage() {
               </p>
               <p className="shortage-form-label">Eksik ürün</p>
               <div className="shortage-check-list">
-                {(shortageTicket.summary || []).map((s) => (
+                {asSummaryList(shortageTicket.summary).map((s) => (
                   <label key={s.menuItemId} className="shortage-check">
                     <input
                       type="checkbox"
@@ -553,7 +552,7 @@ export default function KitchenPage() {
           ) : (
             <div className="history-grid">
               {history.map((ticket) => {
-                const specialNotes = collectSpecialNotes(ticket.summary);
+                const specialNotes = collectSpecialNotes(ticket);
                 return (
                   <article
                     key={ticket.id}

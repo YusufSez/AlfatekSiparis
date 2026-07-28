@@ -6,6 +6,13 @@ import { useTheme } from '../lib/theme';
 import { homeFor, initials } from '../lib/format';
 import { roleLabel } from '../lib/uxLabels';
 
+const LINK_META = {
+  '/office': { icon: '🛒', short: 'Sipariş' },
+  '/kitchen': { icon: '🍳', short: 'Mutfak' },
+  '/admin/dashboard': { icon: '⚙️', short: 'Admin' },
+  '/profile': { icon: '👤', short: 'Profil' },
+};
+
 export default function AppHeader({ title, subtitle, accent, onLogout }) {
   const { user } = useAuth();
   const theme = useTheme();
@@ -41,6 +48,24 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
     };
   }, [menuOpen]);
 
+  function renderNavLink(l, className) {
+    const meta = LINK_META[l.to] || { icon: '•', short: l.label };
+    return (
+      <NavLink
+        key={l.to}
+        to={l.to}
+        className={({ isActive }) => `${className} ${isActive ? 'active' : ''}`}
+        end={!l.to.startsWith('/admin')}
+        onClick={() => setMenuOpen(false)}
+      >
+        <span className="nav-link-ico" aria-hidden>
+          {meta.icon}
+        </span>
+        <span className="nav-link-label">{l.label}</span>
+      </NavLink>
+    );
+  }
+
   return (
     <header className="app-shell-header" style={accent ? { '--accent': accent } : undefined}>
       <div className="app-nav">
@@ -55,16 +80,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
         </button>
 
         <nav className="nav-links nav-links-desktop" aria-label="Ana menü">
-          {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              className={({ isActive }) => `nav-link ${isActive ? 'active' : ''}`}
-              end={!l.to.startsWith('/admin')}
-            >
-              {l.label}
-            </NavLink>
-          ))}
+          {links.map((l) => renderNavLink(l, 'nav-link'))}
         </nav>
 
         <div className="nav-actions">
@@ -78,27 +94,32 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
           >
             {theme.isDark ? '☀' : '🌙'}
           </button>
-          <button
-            type="button"
-            className="nav-user nav-user-btn"
-            title={`${name} · ${roleLabel(user?.role)}`}
-            aria-label="Profil"
-            onClick={() => navigate('/profile')}
-          >
-            <span className="avatar" aria-hidden>
-              {initials(name)}
-            </span>
-            <span className="nav-user-meta">
-              <strong>{name}</strong>
-              <small>
-                {roleLabel(user?.role)}
-                {user?.office?.name ? ` · ${user.office.name}` : ''}
-              </small>
-            </span>
+
+          <div className="nav-user-card">
+            <button
+              type="button"
+              className="nav-user nav-user-btn"
+              title={`${name} · ${roleLabel(user?.role)}`}
+              aria-label="Profil"
+              onClick={() => navigate('/profile')}
+            >
+              <span className="avatar" aria-hidden>
+                {initials(name)}
+              </span>
+              <span className="nav-user-meta">
+                <strong>{name}</strong>
+                <small>
+                  {roleLabel(user?.role)}
+                  {user?.office?.name ? ` · ${user.office.name}` : ''}
+                </small>
+              </span>
+            </button>
+          </div>
+
+          <button type="button" className="btn ghost nav-logout-btn" onClick={onLogout}>
+            <span className="nav-logout-label">Çıkış</span>
           </button>
-          <button type="button" className="btn ghost nav-logout-desktop" onClick={onLogout}>
-            Çıkış
-          </button>
+
           <button
             type="button"
             className="btn ghost nav-menu-btn"
@@ -143,17 +164,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
               </button>
             </div>
             <div className="nav-drawer-links">
-              {links.map((l) => (
-                <NavLink
-                  key={l.to}
-                  to={l.to}
-                  className={({ isActive }) => `nav-drawer-link ${isActive ? 'active' : ''}`}
-                  end={!l.to.startsWith('/admin')}
-                  onClick={() => setMenuOpen(false)}
-                >
-                  {l.label}
-                </NavLink>
-              ))}
+              {links.map((l) => renderNavLink(l, 'nav-drawer-link'))}
             </div>
             <button type="button" className="btn ghost nav-drawer-logout" onClick={onLogout}>
               Çıkış
@@ -170,6 +181,10 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
           </div>
         </div>
       )}
+
+      <nav className="app-bottom-nav" aria-label="Alt gezinme">
+        {links.map((l) => renderNavLink(l, 'bottom-nav-link'))}
+      </nav>
     </header>
   );
 }

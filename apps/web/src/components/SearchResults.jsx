@@ -70,7 +70,9 @@ function renderItem(cat, item) {
           key={item.id}
           icon="🍽️"
           title={item.office}
-          meta={(item.summary || []).map((s) => `${s.qty}× ${s.name}`).join(', ')}
+          meta={(Array.isArray(item.summary) ? item.summary : [])
+            .map((s) => `${s.qty}× ${s.name}`)
+            .join(', ')}
           badges={[item.status]}
         />
       );

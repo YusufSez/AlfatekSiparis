@@ -11,6 +11,7 @@ import { Skeleton, EmptyState } from '../components/LoadStates';
 import { formatDateTime, initials } from '../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../lib/uxLabels';
 import PushNotificationSettings from '../components/PushNotificationSettings';
+import { getOrderSoundEnabled, setOrderSoundEnabled } from '../lib/orderSound';
 
 const KITCHEN_ACTION_LABEL = {
   'kitchen.preparing': 'Hazırlanıyor',
@@ -42,7 +43,13 @@ function ProfileHero({ u, connected }) {
   );
 }
 
-function ThemeSection({ theme }) {
+function ThemeSection({ theme, userId }) {
+  const [soundOn, setSoundOn] = useState(() => getOrderSoundEnabled(userId));
+
+  useEffect(() => {
+    setSoundOn(getOrderSoundEnabled(userId));
+  }, [userId]);
+
   return (
     <section className="card-surface">
       <h3 className="form-title">Tema</h3>
@@ -58,6 +65,24 @@ function ThemeSection({ theme }) {
           onClick={() => theme.setTheme('dark')}
         >
           🌙 Koyu
+        </Button>
+      </div>
+      <h3 className="form-title" style={{ marginTop: '1rem' }}>
+        Ses Efekti
+      </h3>
+      <p className="muted tiny">Yeni sipariş / mutfak siparişi bildiriminde özel ses</p>
+      <div className="row-actions wrap">
+        <Button
+          variant={soundOn ? 'primary' : 'ghost'}
+          onClick={() => setSoundOn(setOrderSoundEnabled(userId, true))}
+        >
+          Açık
+        </Button>
+        <Button
+          variant={!soundOn ? 'primary' : 'ghost'}
+          onClick={() => setSoundOn(setOrderSoundEnabled(userId, false))}
+        >
+          Kapalı
         </Button>
       </div>
     </section>
@@ -258,7 +283,7 @@ export default function ProfilePage() {
 
             {isKitchen ? <KitchenStats stats={stats} /> : <OfficeStats stats={stats} />}
 
-            <ThemeSection theme={theme} />
+            <ThemeSection theme={theme} userId={u.id} />
             <PushNotificationSettings />
             <PasswordSection
               currentPassword={currentPassword}

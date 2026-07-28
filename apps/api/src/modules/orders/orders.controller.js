@@ -4,12 +4,14 @@ import { authMiddleware, clientMeta, requireRoles } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
 import {
   cancelSession,
+  callKitchenStaff,
   confirmSession,
   getPresenceForOffice,
   leaveSession,
   openSession,
   serializeSession,
   serializeTicket,
+  setSpecialRequest,
   skipSession,
   upsertLine,
 } from './orders.domain.js';
@@ -19,6 +21,15 @@ import { prisma } from '../../common/db.js';
 const router = Router();
 
 router.use(authMiddleware);
+
+router.post('/staff-call', requireRoles('office_user'), async (req, res, next) => {
+  try {
+    const result = await callKitchenStaff(req.user, clientMeta(req));
+    res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get('/active', requireRoles('office_user', 'admin'), async (req, res, next) => {
   try {
@@ -86,6 +97,26 @@ router.post('/:id/lines', requireRoles('office_user'), async (req, res, next) =>
       parsed.data.qty,
       clientMeta(req),
       parsed.data.note ?? null
+    );
+    res.json({ session });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/special-request', requireRoles('office_user'), async (req, res, next) => {
+  try {
+    const parsed = z
+      .object({
+        note: z.string().max(200).optional().nullable(),
+      })
+      .safeParse(req.body || {});
+    if (!parsed.success) throw httpError(400, 'Geçersiz özel istek');
+    const session = await setSpecialRequest(
+      req.user,
+      req.params.id,
+      parsed.data.note ?? '',
+      clientMeta(req)
     );
     res.json({ session });
   } catch (err) {

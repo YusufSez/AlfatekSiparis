@@ -5,6 +5,7 @@ import { useAuth } from '../lib/auth';
 import { useSocket } from '../lib/socket';
 import { notificationDedupeKey, showOsNotification } from '../lib/osNotify';
 import { isNotificationEventAllowed } from '../lib/notificationRoles';
+import { playOrderNotificationSound } from '../lib/orderSound';
 
 export default function NotificationCenter() {
   const { user } = useAuth();
@@ -32,6 +33,9 @@ export default function NotificationCenter() {
     return on('notification:new', (n) => {
       if (!isNotificationEventAllowed(role, n.event)) return;
 
+      // Special in-app sound is independent of inbox / OS toast / push.
+      playOrderNotificationSound(user?.id, n);
+
       showOsNotification(n.title, n.body, {
         tag: n.tag,
         event: n.event,
@@ -58,7 +62,7 @@ export default function NotificationCenter() {
         ];
       });
     });
-  }, [on, role]);
+  }, [on, role, user?.id]);
 
   useLayoutEffect(() => {
     if (!open || !wrapRef.current) {

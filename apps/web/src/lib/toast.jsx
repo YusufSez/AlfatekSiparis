@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import { getUserFriendlyError } from './errors';
 
 const ToastContext = createContext(null);
 
@@ -31,8 +32,10 @@ export function ToastProvider({ children }) {
       dismiss,
       success: (msg, opts) => push('success', msg, opts),
       info: (msg, opts) => push('info', msg, opts),
-      warning: (msg, opts) => push('warning', msg, opts),
-      error: (msg, opts) => push('error', msg, opts),
+      warning: (msg, opts) =>
+        push('warning', getUserFriendlyError(typeof msg === 'string' ? { message: msg } : msg), opts),
+      error: (msg, opts) =>
+        push('error', getUserFriendlyError(typeof msg === 'string' ? { message: msg } : msg), opts),
     }),
     [push, dismiss]
   );

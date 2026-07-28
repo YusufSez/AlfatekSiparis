@@ -13,6 +13,7 @@ const EVENTS = [
   'kitchen:new_ticket',
   'kitchen:updated',
   'kitchen:unavailable',
+  'kitchen:staff_call',
   'presence:update',
   'notification:new',
   'announcement:updated',

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useSocket } from '../lib/socket';
 import { useCountdown } from '../lib/useCountdown';
 import { useConfirm } from '../lib/confirm';
+import { useToast } from '../lib/toast';
 import { initials } from '../lib/format';
 import { iconMeta } from '../lib/uxLabels';
 import AppHeader from '../components/AppHeader';
@@ -11,8 +12,6 @@ import AnnouncementBanner from '../components/AnnouncementBanner';
 import { Skeleton, LoadError, OfflineBanner, EmptyState } from '../components/LoadStates';
 import { useOnline } from '../lib/useOnline';
 import { StatusDot } from '../components/Badge';
-import { showOsNotification } from '../lib/osNotify';
-
 function eventLabel(type, actor, payload) {
   const who = actor?.name || 'Sistem';
   switch (type) {
@@ -28,6 +27,10 @@ function eventLabel(type, actor, payload) {
       return `${who} siparişten çıktı`;
     case 'session.skipped':
       return `${who} isteğinin olmadığını bildirdi`;
+    case 'session.special_request':
+      return payload?.note
+        ? `${who} özel istek yazdı: ${payload.note}`
+        : `${who} özel isteği temizledi`;
     case 'session.sent':
       return 'Mutfağa gönderildi';
     case 'session.closed':
@@ -83,10 +86,14 @@ function isOtherItem(item) {
   return item?.icon === 'other' || item?.name?.toLocaleLowerCase?.('tr') === 'diğer';
 }
 
+function asSummaryList(summary) {
+  return Array.isArray(summary) ? summary : [];
+}
+
 function buildOrderReceipt(source) {
   if (!source) return null;
 
-  let items = (source.summary || [])
+  let items = asSummaryList(source.summary)
     .filter((s) => (s.qty || 0) > 0)
     .map((s) => ({
       menuItemId: s.menuItemId,
@@ -139,7 +146,7 @@ function buildOrderReceipt(source) {
     notes.push({ note, userName: userName || null, itemName: itemName || null });
   }
 
-  for (const s of source.summary || []) {
+  for (const s of asSummaryList(source.summary)) {
     for (const n of s.notes || []) pushNote(n.note, n.userName, s.name);
   }
   for (const line of source.lines || []) {
@@ -147,6 +154,9 @@ function buildOrderReceipt(source) {
   }
   for (const d of source.details || []) {
     pushNote(d.note, d.userName, d.menuItemName);
+  }
+  for (const r of source.specialRequests || []) {
+    pushNote(r.note, r.userName, null);
   }
 
   if (items.length === 0 && notes.length === 0) return null;
@@ -339,6 +349,19 @@ function OrderHistoryAccordion({ entries }) {
                 </li>
               ))}
             </ul>
+            {(entry.notes || []).length > 0 && (
+              <div className="order-history-notes">
+                <strong className="tiny">Özel İstek</strong>
+                <ul>
+                  {entry.notes.map((n, i) => (
+                    <li key={`${entry.id}-note-${i}`}>
+                      <span>{n.note}</span>
+                      {n.userName ? <em className="muted tiny"> — {n.userName}</em> : null}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </article>
         ))}
       </div>
@@ -359,6 +382,7 @@ export default function OfficePage() {
   const { user, logout } = useAuth();
   const { on, connected, reconnectKey } = useSocket();
   const { confirm: confirmDialog } = useConfirm();
+  const toast = useToast();
   const online = useOnline(connected);
   const [session, setSession] = useState(null);
   const [menu, setMenu] = useState([]);
@@ -369,11 +393,16 @@ export default function OfficePage() {
   const [booting, setBooting] = useState(true);
   const [otherDraft, setOtherDraft] = useState('');
   const [otherOpen, setOtherOpen] = useState(false);
+  const [specialDraft, setSpecialDraft] = useState('');
+  const [staffCallBusy, setStaffCallBusy] = useState(false);
+  const [staffCallCooldownUntil, setStaffCallCooldownUntil] = useState(0);
   /** collecting | dispatching | collected | preparing | delivered | null */
   const [orderPhase, setOrderPhase] = useState(null);
   const [lastSentOrder, setLastSentOrder] = useState(null);
   const [orderHistory, setOrderHistory] = useState([]);
   const [shortageAlert, setShortageAlert] = useState(null);
+  const specialSaveTimer = useRef(null);
+  const specialDirty = useRef(false);
   const { label, urgent, remaining } = useCountdown(session?.endsAt);
 
   useEffect(() => {
@@ -496,11 +525,7 @@ export default function OfficePage() {
       on('session:opened', (payload) => {
         setSession(payload);
         setOrderPhase('collecting');
-        // No notifyUsers for open — keep a single OS toast here
-        showOsNotification('Yeni sipariş', `${payload.openedBy.name} sipariş açtı`, {
-          event: 'session.opened',
-          payload: { sessionId: payload.id },
-        });
+        // OS toast + order sound for peers → notification:new (opener excluded server-side)
       }),
       on('session:updated', (payload) => {
         if (payload == null || payload.session === null) {
@@ -604,14 +629,38 @@ export default function OfficePage() {
   const status = activePhase ? statusMeta[activePhase] : null;
 
   const specialNotes = useMemo(() => {
-    if (!session?.summary) return [];
+    if (!session) return [];
     const notes = [];
-    for (const s of session.summary) {
+    const seen = new Set();
+    function push(note, userName) {
+      if (!note) return;
+      const key = `${userName || ''}::${note}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      notes.push({ note, userName: userName || null });
+    }
+    for (const r of session.specialRequests || []) {
+      push(r.note, r.userName);
+    }
+    for (const s of asSummaryList(session.summary)) {
       if (!(s.icon === 'other' || String(s.name || '').toLocaleLowerCase('tr') === 'diğer')) continue;
-      for (const n of s.notes || []) notes.push(n);
+      for (const n of s.notes || []) push(n.note, n.userName);
     }
     return notes;
-  }, [session?.summary]);
+  }, [session]);
+
+  // Keep local draft in sync when session updates (unless user is typing)
+  useEffect(() => {
+    if (!session || specialDirty.current) return;
+    const mine = (session.specialRequests || []).find((r) => r.userId === user?.id);
+    setSpecialDraft(mine?.note || '');
+  }, [session, user?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (specialSaveTimer.current) clearTimeout(specialSaveTimer.current);
+    };
+  }, []);
 
   const timelineEvents = useMemo(() => groupTimelineEvents(events), [events]);
 
@@ -650,6 +699,59 @@ export default function OfficePage() {
       setSession(data.session);
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function saveSpecialRequest(note) {
+    if (!session) return;
+    const trimmed = String(note || '').trim();
+    try {
+      const data = await api(`/sessions/${session.id}/special-request`, {
+        method: 'POST',
+        body: { note: trimmed || null },
+      });
+      specialDirty.current = false;
+      setSession(data.session);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function onSpecialDraftChange(value) {
+    specialDirty.current = true;
+    setSpecialDraft(value);
+    if (specialSaveTimer.current) clearTimeout(specialSaveTimer.current);
+    specialSaveTimer.current = setTimeout(() => {
+      void saveSpecialRequest(value);
+    }, 650);
+  }
+
+  async function callStaff() {
+    const ok = await confirmDialog({
+      title: 'Cemile Abla Çağrılsın mı?',
+      message: 'Bu işlem mutfak personeline sizi beklediğinize dair bildirim gönderecektir.',
+      confirmLabel: 'Evet, Çağır',
+      cancelLabel: 'Vazgeç',
+      tone: 'default',
+    });
+    if (!ok) return;
+
+    setStaffCallBusy(true);
+    setError('');
+    try {
+      await api('/sessions/staff-call', { method: 'POST', body: {} });
+      setStaffCallCooldownUntil(Date.now() + 30_000);
+      toast.success('Çağrı gönderildi');
+    } catch (err) {
+      if (err.status === 429) {
+        setStaffCallCooldownUntil(Date.now() + 30_000);
+        toast.warning(err.message || 'Lütfen tekrar çağırmadan önce birkaç saniye bekleyin.');
+      } else {
+        setError(err.message);
+        toast.error(err.message);
+      }
+    } finally {
+      setStaffCallBusy(false);
     }
   }
 
@@ -825,17 +927,27 @@ export default function OfficePage() {
                     title="Sipariş yok"
                     description="Ofisiniz için yeni bir toplu sipariş açın. Herkes anında bildirim alır."
                   />
-                  <div className="order-success-cta order-idle-cta">
+                  <div className="order-primary-actions">
+                    <div className="order-success-cta order-idle-cta">
+                      <button
+                        type="button"
+                        className="btn primary xl pressable order-success-btn"
+                        disabled={busy}
+                        onClick={openSession}
+                      >
+                        <span className="order-cta-ico" aria-hidden>
+                          🛒
+                        </span>
+                        <span>Sipariş aç</span>
+                      </button>
+                    </div>
                     <button
                       type="button"
-                      className="btn primary xl pressable order-success-btn"
-                      disabled={busy}
-                      onClick={openSession}
+                      className="btn outline pressable staff-call-btn"
+                      disabled={busy || staffCallBusy || Date.now() < staffCallCooldownUntil}
+                      onClick={callStaff}
                     >
-                      <span className="order-cta-ico" aria-hidden>
-                        🛒
-                      </span>
-                      <span>Sipariş aç</span>
+                      Cemile Ablayı Çağır
                     </button>
                   </div>
                 </div>
@@ -881,7 +993,7 @@ export default function OfficePage() {
 
                         {lastSentOrder.notes.length > 0 && (
                           <div className="order-receipt-notes">
-                            <h4>Not</h4>
+                            <h4>Özel İstek</h4>
                             <ul>
                               {lastSentOrder.notes.map((n, i) => (
                                 <li key={`${n.note}-${i}`}>
@@ -920,17 +1032,27 @@ export default function OfficePage() {
                   {(activePhase === 'delivered' ||
                     activePhase === 'collected' ||
                     activePhase === 'preparing') && (
-                    <div className="order-success-cta">
+                    <div className="order-primary-actions">
+                      <div className="order-success-cta">
+                        <button
+                          type="button"
+                          className="btn primary xl pressable order-success-btn"
+                          disabled={busy}
+                          onClick={openSession}
+                        >
+                          <span className="order-cta-ico" aria-hidden>
+                            🛒
+                          </span>
+                          <span>Yeni sipariş aç</span>
+                        </button>
+                      </div>
                       <button
                         type="button"
-                        className="btn primary xl pressable order-success-btn"
-                        disabled={busy}
-                        onClick={openSession}
+                        className="btn outline pressable staff-call-btn"
+                        disabled={busy || staffCallBusy || Date.now() < staffCallCooldownUntil}
+                        onClick={callStaff}
                       >
-                        <span className="order-cta-ico" aria-hidden>
-                          🛒
-                        </span>
-                        <span>Yeni sipariş aç</span>
+                        Cemile Ablayı Çağır
                       </button>
                     </div>
                   )}
@@ -1143,15 +1265,32 @@ export default function OfficePage() {
                       </div>
                     </div>
                   )}
+
+                  <div className="special-request-panel">
+                    <label htmlFor="special-request">Özel İstek</label>
+                    <p className="muted tiny">Opsiyonel — şekersiz, az köpüklü, karton bardak…</p>
+                    <textarea
+                      id="special-request"
+                      rows={2}
+                      maxLength={200}
+                      placeholder="Şekersiz olsun, çay açık olsun…"
+                      value={specialDraft}
+                      disabled={busy || mySkipped}
+                      onChange={(e) => onSpecialDraftChange(e.target.value)}
+                      onBlur={() => {
+                        if (specialDirty.current) void saveSpecialRequest(specialDraft);
+                      }}
+                    />
+                  </div>
                 </section>
 
                 <section className="summary-panel">
                   <h3>Ofis özeti</h3>
-                  {session.summary.length === 0 ? (
+                  {asSummaryList(session.summary).length === 0 ? (
                     <p className="muted">Henüz sipariş yok</p>
                   ) : (
                     <ul className="summary-list">
-                      {session.summary.map((s) => (
+                      {asSummaryList(session.summary).map((s) => (
                         <li key={s.menuItemId}>
                           <span aria-hidden>{iconMeta(s.icon).emoji}</span>
                           <strong>{s.qty}×</strong> {s.name}

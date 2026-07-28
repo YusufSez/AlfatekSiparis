@@ -12,6 +12,7 @@ import { Skeleton, EmptyState } from '../../components/LoadStates';
 import { formatDateTime, initials } from '../../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../../lib/uxLabels';
 import PushNotificationSettings from '../../components/PushNotificationSettings';
+import { getOrderSoundEnabled, setOrderSoundEnabled } from '../../lib/orderSound';
 
 export default function AdminProfilePage() {
   const { user } = useAuth();
@@ -24,6 +25,12 @@ export default function AdminProfilePage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const uPreview = profile?.user || user;
+  const [soundOn, setSoundOn] = useState(() => getOrderSoundEnabled(uPreview?.id));
+
+  useEffect(() => {
+    setSoundOn(getOrderSoundEnabled(uPreview?.id));
+  }, [uPreview?.id]);
 
   useEffect(() => {
     api('/auth/profile')
@@ -113,6 +120,24 @@ export default function AdminProfilePage() {
             onClick={() => theme.setTheme('dark')}
           >
             🌙 Koyu
+          </Button>
+        </div>
+        <h3 className="form-title" style={{ marginTop: '1rem' }}>
+          Ses Efekti
+        </h3>
+        <p className="muted tiny">Yeni sipariş / mutfak siparişi bildiriminde özel ses</p>
+        <div className="row-actions wrap">
+          <Button
+            variant={soundOn ? 'primary' : 'ghost'}
+            onClick={() => setSoundOn(setOrderSoundEnabled(u?.id, true))}
+          >
+            Açık
+          </Button>
+          <Button
+            variant={!soundOn ? 'primary' : 'ghost'}
+            onClick={() => setSoundOn(setOrderSoundEnabled(u?.id, false))}
+          >
+            Kapalı
           </Button>
         </div>
       </section>

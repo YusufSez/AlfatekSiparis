@@ -54,6 +54,7 @@ model User {
   openedSessions OrderSession[]       @relation("OpenedBy")
   orderLines     OrderLine[]
   sessionSkips   SessionSkip[]
+  specialRequests SessionSpecialRequest[]
   auditLogs      AuditLog[]
   sessionEvents  SessionEvent[]
   notifications  UserNotification[]
@@ -99,10 +100,27 @@ model OrderSession {
   openedBy User            @relation("OpenedBy", fields: [openedById], references: [id])
   lines    OrderLine[]
   skips    SessionSkip[]
+  specialRequests SessionSpecialRequest[]
   ticket   KitchenTicket?
   events   SessionEvent[]
 
   @@index([officeId, status])
+}
+
+/** Per-user free-text note for the collecting session (e.g. şekersiz, az köpüklü). */
+model SessionSpecialRequest {
+  id        String   @id @default(cuid())
+  sessionId String
+  userId    String
+  note      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  session OrderSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id])
+
+  @@unique([sessionId, userId])
+  @@index([sessionId])
 }
 
 model OrderLine {

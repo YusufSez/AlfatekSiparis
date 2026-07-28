@@ -2,6 +2,7 @@ import { SessionEventType, SocketEvents } from '../../common/sessionEventType.js
 
 /** Inbox/push events allowed per role (defense in depth; primary filter is who we notify). */
 const OFFICE_EVENTS = new Set([
+  SessionEventType.OPENED,
   SessionEventType.SENT,
   SessionEventType.CLOSED,
   SessionEventType.PREPARING,
@@ -11,6 +12,8 @@ const OFFICE_EVENTS = new Set([
 
 const KITCHEN_EVENTS = new Set([
   SocketEvents.KITCHEN_NEW,
+  SocketEvents.KITCHEN_STAFF_CALL,
+  SessionEventType.STAFF_CALL,
   SessionEventType.UNAVAILABLE,
   SessionEventType.CLOSED,
 ]);

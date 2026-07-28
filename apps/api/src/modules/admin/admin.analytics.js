@@ -1,5 +1,6 @@
 import { prisma } from '../../common/db.js';
 import { presenceService } from '../presence/presence.service.js';
+import { parseTicketSummaryJson } from '../../common/ticketSummary.js';
 
 function startOfDay(d = new Date()) {
   const x = new Date(d);
@@ -53,9 +54,10 @@ export async function getDashboardStats() {
 
   const productTotals = new Map();
   for (const t of ticketsToday) {
-    const summary = JSON.parse(t.summaryJson);
+    const { summary } = parseTicketSummaryJson(t.summaryJson);
     for (const s of summary) {
-      productTotals.set(s.name, (productTotals.get(s.name) || 0) + s.qty);
+      if (!s?.name) continue;
+      productTotals.set(s.name, (productTotals.get(s.name) || 0) + (s.qty || 0));
     }
   }
 
@@ -274,13 +276,16 @@ export async function globalSearch(q) {
       body: n.body,
       createdAt: n.createdAt,
     })),
-    tickets: tickets.map((t) => ({
-      id: t.id,
-      status: t.status,
-      office: t.office.name,
-      summary: JSON.parse(t.summaryJson),
-      createdAt: t.createdAt,
-    })),
+    tickets: tickets.map((t) => {
+      const { summary } = parseTicketSummaryJson(t.summaryJson);
+      return {
+        id: t.id,
+        status: t.status,
+        office: t.office.name,
+        summary,
+        createdAt: t.createdAt,
+      };
+    }),
     announcements: announcements.map((a) => ({
       id: a.id,
       title: a.title,

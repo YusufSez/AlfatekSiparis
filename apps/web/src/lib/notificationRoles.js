@@ -1,6 +1,7 @@
 /** Role → which notification `event` values may appear in the inbox / OS toast. */
 
 const OFFICE_EVENTS = new Set([
+  'session.opened',
   'session.sent',
   'session.closed',
   'ticket.preparing',
@@ -10,6 +11,7 @@ const OFFICE_EVENTS = new Set([
 
 const KITCHEN_EVENTS = new Set([
   'kitchen:new_ticket',
+  'kitchen:staff_call',
   'ticket.unavailable',
   'session.closed',
 ]);

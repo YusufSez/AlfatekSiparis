@@ -16,6 +16,11 @@ export function sessionInclude() {
         user: { select: { id: true, name: true, username: true } },
       },
     },
+    specialRequests: {
+      include: {
+        user: { select: { id: true, name: true, username: true } },
+      },
+    },
   };
 }
 

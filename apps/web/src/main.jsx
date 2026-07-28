@@ -11,6 +11,9 @@ import App from './App';
 import './index.css';
 import './_mobile.css';
 import './_polish.css';
+import { preloadOrderNotificationSound } from './lib/orderSound';
+
+preloadOrderNotificationSound();
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

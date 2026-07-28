@@ -1,3 +1,5 @@
+import { getUserFriendlyError } from './errors';
+
 /**
  * Resolve API base URL for fetch + Socket.io.
  * - DEV: always page hostname + :4000 (LAN / phone safe). Ignores VITE_API_URL
@@ -45,6 +47,15 @@ export function clearAuthStorage() {
   localStorage.removeItem(REMEMBER_KEY);
 }
 
+function throwFriendly(errorLike) {
+  const message = getUserFriendlyError(errorLike);
+  const err = new Error(message);
+  err.status = errorLike?.status ?? errorLike?.statusCode ?? null;
+  err.data = errorLike?.data ?? null;
+  err.cause = errorLike;
+  throw err;
+}
+
 export async function api(path, options = {}) {
   const headers = {
     'Content-Type': 'application/json',
@@ -54,11 +65,19 @@ export async function api(path, options = {}) {
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const base = resolveApiBaseUrl();
-  const res = await fetch(`${base}${path}`, {
-    ...options,
-    headers,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`${base}${path}`, {
+      ...options,
+      headers,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (networkErr) {
+    if (import.meta.env.DEV) {
+      console.warn('[api] network error', path, networkErr);
+    }
+    throwFriendly(networkErr);
+  }
 
   let data = null;
   try {
@@ -74,12 +93,16 @@ export async function api(path, options = {}) {
         window.dispatchEvent(new CustomEvent('auth:expired'));
       }
     }
-    const err = new Error(data?.error || 'İstek başarısız');
-    err.status = res.status;
-    err.data = data;
-    throw err;
+    if (import.meta.env.DEV && data?.error) {
+      console.warn('[api] http error', res.status, path, data.error);
+    }
+    throwFriendly({
+      message: data?.error || `HTTP ${res.status}`,
+      status: res.status,
+      data,
+    });
   }
   return data;
 }
 
-export { API_URL };
+export { API_URL, getUserFriendlyError };

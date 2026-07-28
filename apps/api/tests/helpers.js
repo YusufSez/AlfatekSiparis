@@ -14,6 +14,7 @@ export async function resetDb() {
   await prisma.userNotification.deleteMany();
   await prisma.sessionEvent.deleteMany();
   await prisma.sessionSkip.deleteMany().catch(() => {});
+  await prisma.sessionSpecialRequest.deleteMany().catch(() => {});
   await prisma.orderLine.deleteMany();
   await prisma.kitchenTicket.deleteMany();
   await prisma.orderSession.deleteMany();

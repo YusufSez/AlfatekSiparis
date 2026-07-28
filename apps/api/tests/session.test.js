@@ -106,6 +106,55 @@ describe('SESSION', () => {
     expect(result).toBeTruthy();
     expect(result.status).toBe('sent');
   });
+
+  it('özel istek kaydedilir ve ticketa yazılır', async () => {
+    const t = await token();
+    const opened = await request(app).post('/sessions').set(authHeader(t)).send({});
+    const sid = opened.body.session.id;
+    await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(t))
+      .send({ menuItemId: fixtures.tea.id, qty: 1 });
+    const noteRes = await request(app)
+      .post(`/sessions/${sid}/special-request`)
+      .set(authHeader(t))
+      .send({ note: 'Şekersiz olsun' });
+    expect(noteRes.status).toBe(200);
+    expect(noteRes.body.session.specialRequests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ note: 'Şekersiz olsun', userId: fixtures.yusuf.id }),
+      ])
+    );
+
+    const conf = await request(app)
+      .post(`/sessions/${sid}/confirm`)
+      .set(authHeader(t))
+      .send({});
+    expect(conf.status).toBe(200);
+    const ticket = await prisma.kitchenTicket.findUnique({ where: { sessionId: sid } });
+    const parsed = JSON.parse(ticket.summaryJson);
+    expect(parsed.specialRequests).toEqual(
+      expect.arrayContaining([expect.objectContaining({ note: 'Şekersiz olsun' })])
+    );
+  });
+
+  it('staff-call bildirim gönderir ve 30sn spam koruması uygular', async () => {
+    const t = await token();
+    const first = await request(app).post('/sessions/staff-call').set(authHeader(t)).send({});
+    expect(first.status).toBe(200);
+    expect(first.body.ok).toBe(true);
+
+    const notes = await prisma.userNotification.findMany({
+      where: { event: 'kitchen:staff_call' },
+    });
+    expect(notes.length).toBeGreaterThan(0);
+    expect(notes[0].title).toBe('Cemile Abla');
+    expect(notes[0].body).toContain('Teknik Ofis');
+
+    const second = await request(app).post('/sessions/staff-call').set(authHeader(t)).send({});
+    expect(second.status).toBe(429);
+    expect(String(second.body.error || '')).toMatch(/bekleyin/i);
+  });
 });
 
 describe('RACE CONDITION', () => {

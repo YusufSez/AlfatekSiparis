@@ -4,11 +4,13 @@ export const SessionEventType = Object.freeze({
   LINE_REMOVED: 'session.line_removed',
   LEFT: 'session.left',
   SKIPPED: 'session.skipped',
+  SPECIAL_REQUEST: 'session.special_request',
   SENT: 'session.sent',
   CLOSED: 'session.closed',
   PREPARING: 'ticket.preparing',
   DELIVERED: 'ticket.delivered',
   UNAVAILABLE: 'ticket.unavailable',
+  STAFF_CALL: 'kitchen:staff_call',
 });
 
 export const SocketEvents = Object.freeze({
@@ -19,6 +21,7 @@ export const SocketEvents = Object.freeze({
   KITCHEN_NEW: 'kitchen:new_ticket',
   KITCHEN_UPDATED: 'kitchen:updated',
   KITCHEN_UNAVAILABLE: 'kitchen:unavailable',
+  KITCHEN_STAFF_CALL: 'kitchen:staff_call',
   PRESENCE_UPDATE: 'presence:update',
   NOTIFICATION: 'notification:new',
   ANNOUNCEMENT: 'announcement:updated',
