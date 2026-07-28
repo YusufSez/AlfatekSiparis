@@ -5,13 +5,13 @@ import { useSocket } from '../lib/socket';
 import { useCountdown } from '../lib/useCountdown';
 import { useConfirm } from '../lib/confirm';
 import { useToast } from '../lib/toast';
-import { initials } from '../lib/format';
 import { iconMeta } from '../lib/uxLabels';
 import AppHeader from '../components/AppHeader';
 import AnnouncementBanner from '../components/AnnouncementBanner';
 import { Skeleton, LoadError, OfflineBanner, EmptyState } from '../components/LoadStates';
 import { useOnline } from '../lib/useOnline';
 import { StatusDot } from '../components/Badge';
+import { Avatar } from '../components/Avatar';
 function eventLabel(type, actor, payload) {
   const who = actor?.name || 'Sistem';
   switch (type) {
@@ -910,7 +910,7 @@ export default function OfficePage() {
                   key={u.id}
                   className={`presence-chip rich ${u.online ? 'on' : 'off'} resp-${u.response || 'pending'}`}
                 >
-                  <span className="avatar sm">{initials(u.name)}</span>
+                  <Avatar name={u.name} avatarUrl={u.avatarUrl} size="sm" />
                   <StatusDot online={u.online} />
                   <span>{u.name}</span>
                   {u.response === 'skipped' && <em className="resp-badge skip">Gelmeyecek</em>}
@@ -1113,7 +1113,7 @@ export default function OfficePage() {
                         )}
                         {(session.participants || []).map((p) => (
                           <span key={p.id} className="participant-chip joined">
-                            <span className="avatar sm">{initials(p.name)}</span>
+                            <Avatar name={p.name} avatarUrl={p.avatarUrl} size="sm" />
                             <span className="chip-name">{p.name}</span>
                           </span>
                         ))}
@@ -1127,7 +1127,7 @@ export default function OfficePage() {
                         )}
                         {(session.skippedUsers || []).map((u) => (
                           <span key={u.id} className="participant-chip skipped">
-                            <span className="avatar sm">{initials(u.name)}</span>
+                            <Avatar name={u.name} avatarUrl={u.avatarUrl} size="sm" />
                             <span className="chip-name">{u.name}</span>
                             <em>Gelmeyecek</em>
                           </span>
@@ -1142,7 +1142,7 @@ export default function OfficePage() {
                         )}
                         {(session.pendingUsers || []).map((u) => (
                           <span key={u.id} className="participant-chip pending">
-                            <span className="avatar sm">{initials(u.name)}</span>
+                            <Avatar name={u.name} avatarUrl={u.avatarUrl} size="sm" />
                             <span className="chip-name">{u.name}</span>
                           </span>
                         ))}

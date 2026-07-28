@@ -9,13 +9,14 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import { Badge } from '../../components/Badge';
 import { Skeleton, EmptyState } from '../../components/LoadStates';
-import { formatDateTime, initials } from '../../lib/format';
+import { formatDateTime } from '../../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../../lib/uxLabels';
 import PushNotificationSettings from '../../components/PushNotificationSettings';
+import AvatarEditor from '../../components/AvatarEditor';
 import { getOrderSoundEnabled, setOrderSoundEnabled } from '../../lib/orderSound';
 
 export default function AdminProfilePage() {
-  const { user } = useAuth();
+  const { user, setUser } = useAuth();
   const { connected } = useSocket();
   const theme = useTheme();
   const toast = useToast();
@@ -39,6 +40,11 @@ export default function AdminProfilePage() {
       .finally(() => setBooting(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function onAvatarUpdated(nextUser) {
+    setUser(nextUser);
+    setProfile((prev) => (prev ? { ...prev, user: nextUser } : { user: nextUser }));
+  }
 
   async function changePassword(e) {
     e.preventDefault();
@@ -69,9 +75,7 @@ export default function AdminProfilePage() {
       <PageHeader title="Profil" description="Hesap bilgileriniz" />
 
       <section className="profile-hero card-surface">
-        <div className="avatar xl" aria-hidden>
-          {initials(u.name)}
-        </div>
+        <AvatarEditor user={u} onUpdated={onAvatarUpdated} />
         <div>
           <h2>{u.name}</h2>
           <p className="muted">@{u.username}</p>

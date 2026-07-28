@@ -8,9 +8,10 @@ import AppHeader from '../components/AppHeader';
 import { Badge } from '../components/Badge';
 import Button from '../components/ui/Button';
 import { Skeleton, EmptyState } from '../components/LoadStates';
-import { formatDateTime, initials } from '../lib/format';
+import { formatDateTime } from '../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../lib/uxLabels';
 import PushNotificationSettings from '../components/PushNotificationSettings';
+import AvatarEditor from '../components/AvatarEditor';
 import { getOrderSoundEnabled, setOrderSoundEnabled } from '../lib/orderSound';
 
 const KITCHEN_ACTION_LABEL = {
@@ -18,12 +19,10 @@ const KITCHEN_ACTION_LABEL = {
   'kitchen.delivered': 'Teslim edildi',
 };
 
-function ProfileHero({ u, connected }) {
+function ProfileHero({ u, connected, onAvatarUpdated }) {
   return (
     <section className="profile-hero card-surface">
-      <div className="avatar xl" aria-hidden>
-        {initials(u.name)}
-      </div>
+      <AvatarEditor user={u} onUpdated={onAvatarUpdated} />
       <div>
         <h2>{u.name}</h2>
         <p className="muted">@{u.username}</p>
@@ -225,7 +224,7 @@ function KitchenStats({ stats }) {
 }
 
 export default function ProfilePage() {
-  const { user, logout } = useAuth();
+  const { user, logout, setUser } = useAuth();
   const { connected } = useSocket();
   const theme = useTheme();
   const toast = useToast();
@@ -241,6 +240,11 @@ export default function ProfilePage() {
       .catch((e) => toast.error(e.message))
       .finally(() => setBooting(false));
   }, [toast]);
+
+  function onAvatarUpdated(nextUser) {
+    setUser(nextUser);
+    setProfile((prev) => (prev ? { ...prev, user: nextUser } : { user: nextUser }));
+  }
 
   async function changePassword(e) {
     e.preventDefault();
@@ -279,7 +283,7 @@ export default function ProfilePage() {
           />
         ) : (
           <div className="profile-layout">
-            <ProfileHero u={u} connected={connected} />
+            <ProfileHero u={u} connected={connected} onAvatarUpdated={onAvatarUpdated} />
 
             {isKitchen ? <KitchenStats stats={stats} /> : <OfficeStats stats={stats} />}
 

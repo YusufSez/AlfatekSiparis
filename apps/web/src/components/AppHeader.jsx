@@ -3,8 +3,9 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import NotificationCenter from './NotificationCenter';
 import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
-import { homeFor, initials } from '../lib/format';
+import { homeFor } from '../lib/format';
 import { roleLabel } from '../lib/uxLabels';
+import { Avatar } from './Avatar';
 
 const LINK_META = {
   '/office': { icon: '🛒', short: 'Sipariş' },
@@ -103,9 +104,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
               aria-label="Profil"
               onClick={() => navigate('/profile')}
             >
-              <span className="avatar" aria-hidden>
-                {initials(name)}
-              </span>
+              <Avatar name={name} avatarUrl={user?.avatarUrl} />
               <span className="nav-user-meta">
                 <strong>{name}</strong>
                 <small>
@@ -143,9 +142,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
           <nav className="nav-drawer" aria-label="Mobil menü">
             <div className="nav-drawer-top">
               <div className="nav-drawer-user">
-                <span className="avatar" aria-hidden>
-                  {initials(name)}
-                </span>
+                <Avatar name={name} avatarUrl={user?.avatarUrl} />
                 <div>
                   <strong>{name}</strong>
                   <small className="muted">

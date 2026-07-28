@@ -4,6 +4,7 @@ import { assertTransition } from '../../common/stateMachine.js';
 import { SessionEventType, SocketEvents } from '../../common/sessionEventType.js';
 import { logger } from '../../common/logger.js';
 import { parseTicketSummaryJson } from '../../common/ticketSummary.js';
+import { isNotificationEventAllowed } from '../notifications/notificationAudience.js';
 import { notificationService } from '../notifications/notification.service.js';
 import { presenceService } from '../presence/presence.service.js';
 import { ordersRepository, sessionInclude } from './orders.repository.js';
@@ -38,6 +39,7 @@ async function activeUserIds({ role, roles, officeId, excludeIds = [] } = {}) {
   const users = await prisma.user.findMany({
     where: {
       active: true,
+      deletedAt: null,
       ...(roleFilter ? { role: roleFilter } : {}),
       ...(officeId ? { officeId } : {}),
     },
@@ -57,7 +59,18 @@ function assertSessionOfficeAccess(user, session) {
 
 async function notifyUsers(userIds, { title, body, event, payload, url, tag, playSound = false } = {}) {
   const unique = [...new Set(userIds.filter(Boolean))];
-  if (!unique.length) return;
+  if (!unique.length || !event) return;
+
+  // Defense in depth: never write inbox/push for roles that must not see this event
+  const recipients = await prisma.user.findMany({
+    where: { id: { in: unique }, active: true, deletedAt: null },
+    select: { id: true, role: true },
+  });
+  const allowedIds = recipients
+    .filter((u) => isNotificationEventAllowed(u.role, event))
+    .map((u) => u.id);
+  if (!allowedIds.length) return;
+
   const p = payload && typeof payload === 'object' ? payload : {};
   const resolvedTag =
     tag ||
@@ -69,7 +82,7 @@ async function notifyUsers(userIds, { title, body, event, payload, url, tag, pla
   const shouldPlaySound = Boolean(playSound);
 
   await prisma.userNotification.createMany({
-    data: unique.map((userId) => ({
+    data: allowedIds.map((userId) => ({
       userId,
       title,
       body,
@@ -77,7 +90,7 @@ async function notifyUsers(userIds, { title, body, event, payload, url, tag, pla
       payload: JSON.stringify({ ...p, playSound: shouldPlaySound }),
     })),
   });
-  for (const userId of unique) {
+  for (const userId of allowedIds) {
     await notificationService.notify({
       rooms: [`user:${userId}`],
       event: SocketEvents.NOTIFICATION,
@@ -91,7 +104,7 @@ async function notifyUsers(userIds, { title, body, event, payload, url, tag, pla
       },
     });
   }
-  await notificationService.sendPushToUsers(unique, {
+  await notificationService.sendPushToUsers(allowedIds, {
     title,
     body,
     event,
@@ -111,6 +124,7 @@ export async function serializeSession(session) {
         id: line.user.id,
         name: line.user.name,
         username: line.user.username,
+        avatarUrl: line.user.avatarUrl || null,
       });
     }
   }
@@ -119,6 +133,7 @@ export async function serializeSession(session) {
     id: s.user.id,
     name: s.user.name,
     username: s.user.username,
+    avatarUrl: s.user.avatarUrl || null,
   }));
   const skippedIds = new Set(skippedUsers.map((u) => u.id));
 
@@ -140,7 +155,7 @@ export async function serializeSession(session) {
 
   const officeUsers = await prisma.user.findMany({
     where: { officeId: session.officeId, role: 'office_user', active: true },
-    select: { id: true, name: true, username: true },
+    select: { id: true, name: true, username: true, avatarUrl: true },
     orderBy: { name: 'asc' },
   });
 
@@ -811,7 +826,7 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
   });
 
   const kitchenPushBody = `${session.office.name}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`;
-  const kitchenStaffIds = await activeUserIds({ roles: ['kitchen', 'admin'] });
+  const kitchenStaffIds = await activeUserIds({ role: 'kitchen' });
   await notifyUsers(kitchenStaffIds, {
     title: 'Yeni mutfak siparişi',
     body: kitchenPushBody,
@@ -974,9 +989,9 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
     url: '/office',
   });
 
-  // Other kitchen/admin staff (not the reporter) — kitchen-oriented wording
+  // Other kitchen staff (not the reporter) — kitchen-oriented wording
   const kitchenStaffIds = await activeUserIds({
-    roles: ['kitchen', 'admin'],
+    role: 'kitchen',
     excludeIds: [user.id],
   });
   await notifyUsers(kitchenStaffIds, {
@@ -1092,7 +1107,7 @@ export async function callKitchenStaff(user, meta = {}) {
   const title = 'Cemile Abla';
   const body = `${officeName} sizi bekliyor.`;
 
-  const kitchenStaffIds = await activeUserIds({ roles: ['kitchen', 'admin'] });
+  const kitchenStaffIds = await activeUserIds({ role: 'kitchen' });
   await notifyUsers(kitchenStaffIds, {
     title,
     body,
@@ -1109,7 +1124,7 @@ export async function callKitchenStaff(user, meta = {}) {
   });
 
   await notificationService.notify({
-    rooms: ['kitchen', 'admins'],
+    rooms: ['kitchen'],
     event: SocketEvents.KITCHEN_STAFF_CALL,
     payload: {
       officeId: office.id,
@@ -1141,7 +1156,7 @@ export async function callKitchenStaff(user, meta = {}) {
 export async function getPresenceForOffice(officeId) {
   const officeUsers = await prisma.user.findMany({
     where: { officeId, role: 'office_user', active: true },
-    select: { id: true, name: true, username: true },
+    select: { id: true, name: true, username: true, avatarUrl: true },
     orderBy: { name: 'asc' },
   });
   const online = await presenceService.listOnline(officeId);

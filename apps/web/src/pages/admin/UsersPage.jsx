@@ -11,7 +11,8 @@ import { api } from '../../lib/api';
 import { useAdminData } from '../../lib/adminData';
 import { useAuth } from '../../lib/auth';
 import { useConfirm } from '../../lib/confirm';
-import { formatDateTime, initials } from '../../lib/format';
+import { formatDateTime } from '../../lib/format';
+import { Avatar } from '../../components/Avatar';
 import { ROLE_META, roleHint, roleLabel } from '../../lib/uxLabels';
 
 export default function UsersPage() {
@@ -127,7 +128,7 @@ export default function UsersPage() {
     {
       key: 'avatar',
       header: 'Avatar',
-      render: (u) => <span className="avatar sm">{initials(u.name)}</span>,
+      render: (u) => <Avatar name={u.name} avatarUrl={u.avatarUrl} size="sm" />,
     },
     {
       key: 'name',

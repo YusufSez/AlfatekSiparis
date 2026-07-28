@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import multer from 'multer';
 import { z } from 'zod';
 import { prisma } from '../../common/db.js';
 import {
@@ -10,6 +11,12 @@ import {
 } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
 import { parseTicketSummaryJson } from '../../common/ticketSummary.js';
+import {
+  AVATAR_MAX_BYTES,
+  deleteAvatarFile,
+  isAllowedUploadMime,
+  saveAvatarBuffer,
+} from '../../common/avatarStorage.js';
 import { writeAudit } from '../orders/orders.domain.js';
 
 const router = Router();
@@ -209,6 +216,75 @@ router.post('/password', authMiddleware, async (req, res, next) => {
     });
     await writeAudit(req.user.id, 'auth.password_change', {}, clientMeta(req));
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: AVATAR_MAX_BYTES, files: 1 },
+  fileFilter(_req, file, cb) {
+    const mime = String(file.mimetype || '').toLowerCase();
+    const normalized = mime === 'image/jpg' ? 'image/jpeg' : mime;
+    if (!isAllowedUploadMime(normalized)) {
+      return cb(httpError(400, 'Sadece JPG, PNG veya WEBP yükleyebilirsiniz.'));
+    }
+    cb(null, true);
+  },
+});
+
+function handleAvatarMulter(req, res, next) {
+  avatarUpload.single('avatar')(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return next(httpError(400, 'Dosya boyutu 5 MB sınırını aşıyor.'));
+      }
+      return next(httpError(400, 'Dosya yüklenemedi.'));
+    }
+    return next(err.status ? err : httpError(400, err.message || 'Dosya yüklenemedi.'));
+  });
+}
+
+/** Own avatar only — authenticated user cannot change another user's photo. */
+router.post('/avatar', authMiddleware, handleAvatarMulter, async (req, res, next) => {
+  try {
+    if (!req.file?.buffer) {
+      throw httpError(400, 'Lütfen bir görsel seçin.');
+    }
+
+    const previousUrl = req.user.avatarUrl || null;
+    const { avatarUrl } = saveAvatarBuffer(req.user.id, req.file.buffer, req.file.mimetype);
+
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { avatarUrl },
+      include: { office: true },
+    });
+
+    if (previousUrl && previousUrl !== avatarUrl) {
+      deleteAvatarFile(previousUrl);
+    }
+
+    await writeAudit(req.user.id, 'auth.avatar_update', { avatarUrl }, clientMeta(req));
+    res.json({ user: publicUser(user) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete('/avatar', authMiddleware, async (req, res, next) => {
+  try {
+    const previousUrl = req.user.avatarUrl || null;
+    const user = await prisma.user.update({
+      where: { id: req.user.id },
+      data: { avatarUrl: null },
+      include: { office: true },
+    });
+    if (previousUrl) deleteAvatarFile(previousUrl);
+    await writeAudit(req.user.id, 'auth.avatar_remove', {}, clientMeta(req));
+    res.json({ user: publicUser(user) });
   } catch (err) {
     next(err);
   }

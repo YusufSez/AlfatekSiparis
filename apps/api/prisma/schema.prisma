@@ -45,6 +45,7 @@ model User {
   passwordHash String
   role         Role      @default(office_user)
   officeId     String?
+  avatarUrl    String?
   active       Boolean   @default(true)
   deletedAt    DateTime?
   createdAt    DateTime  @default(now())

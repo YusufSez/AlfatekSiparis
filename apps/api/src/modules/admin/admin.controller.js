@@ -9,8 +9,20 @@ import {
   requireRoles,
 } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
-import { getSettings, writeAudit, getPresenceForOffice } from '../orders/orders.domain.js';
+import { getSettings, writeAudit, notifyUsers, getPresenceForOffice } from '../orders/orders.domain.js';
 import { getDashboardStats, globalSearch } from './admin.analytics.js';
+import { deleteAvatarFile } from '../../common/avatarStorage.js';
+
+async function notifyOtherAdmins(actorId, { title, body, event, payload }) {
+  const admins = await prisma.user.findMany({
+    where: { role: 'admin', active: true, deletedAt: null, id: { not: actorId } },
+    select: { id: true },
+  });
+  await notifyUsers(
+    admins.map((a) => a.id),
+    { title, body, event, payload, url: '/admin/users' }
+  );
+}
 
 const router = Router();
 router.use(authMiddleware, requireRoles('admin'));
@@ -133,6 +145,12 @@ router.post('/users', async (req, res, next) => {
       include: { office: true },
     });
     await writeAudit(req.user.id, 'admin.user_create', { id: user.id }, clientMeta(req));
+    await notifyOtherAdmins(req.user.id, {
+      title: 'Yeni kullanıcı oluşturuldu',
+      body: `${user.name} (${user.username}) — ${user.role}`,
+      event: 'admin.user_created',
+      payload: { userId: user.id, role: user.role },
+    });
     res.status(201).json({ user: publicUser(user) });
   } catch (e) {
     next(e.status ? e : httpError(400, 'Kullanıcı adı kullanılıyor olabilir'));
@@ -227,9 +245,14 @@ router.delete('/users/:id', async (req, res, next) => {
           officeId: null,
           active: false,
           deletedAt: new Date(),
+          avatarUrl: null,
         },
       });
     });
+
+    if (existing.avatarUrl) {
+      deleteAvatarFile(existing.avatarUrl);
+    }
 
     await writeAudit(
       req.user.id,
@@ -237,6 +260,12 @@ router.delete('/users/:id', async (req, res, next) => {
       { id: targetId, previousUsername: existing.username, previousRole: existing.role },
       clientMeta(req)
     );
+    await notifyOtherAdmins(req.user.id, {
+      title: 'Kullanıcı silindi',
+      body: `${existing.name} (${existing.username}) hesabı silindi`,
+      event: 'admin.user_deleted',
+      payload: { userId: targetId, previousRole: existing.role },
+    });
     res.json({ ok: true, id: targetId });
   } catch (e) {
     next(e.status ? e : httpError(400, 'Kullanıcı silinemedi'));

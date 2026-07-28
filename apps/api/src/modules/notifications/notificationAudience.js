@@ -1,7 +1,18 @@
 import { SessionEventType, SocketEvents } from '../../common/sessionEventType.js';
 
-/** Inbox/push events allowed per role (defense in depth; primary filter is who we notify). */
-const OFFICE_EVENTS = new Set([
+/**
+ * Role-based notification audience — single source of truth.
+ *
+ * Who receives UserNotification / push / notification:new is decided by
+ * notifyUsers targets + this allow-list (defense in depth).
+ *
+ * Socket rooms for kitchen board sync (kitchen:new_ticket, kitchen:updated)
+ * may still include `admins` so admins can watch the kitchen UI live —
+ * that is NOT an inbox/push notification.
+ */
+
+/** Office users: own-office order lifecycle only. */
+export const OFFICE_EVENTS = new Set([
   SessionEventType.OPENED,
   SessionEventType.SENT,
   SessionEventType.CLOSED,
@@ -10,20 +21,28 @@ const OFFICE_EVENTS = new Set([
   SessionEventType.UNAVAILABLE,
 ]);
 
-const KITCHEN_EVENTS = new Set([
+/** Kitchen staff: new tickets, staff calls, peer shortage alerts. */
+export const KITCHEN_EVENTS = new Set([
   SocketEvents.KITCHEN_NEW,
   SocketEvents.KITCHEN_STAFF_CALL,
   SessionEventType.STAFF_CALL,
   SessionEventType.UNAVAILABLE,
-  SessionEventType.CLOSED,
+]);
+
+/**
+ * Admins: management / system only — never normal office or kitchen workflow.
+ * Add new admin-facing events here when introducing them.
+ */
+export const ADMIN_EVENTS = new Set([
+  'admin.user_created',
+  'admin.user_deleted',
+  'admin.system_alert',
 ]);
 
 export function isNotificationEventAllowed(role, event) {
-  if (!event) return true;
-  if (role === 'admin') return true;
+  if (!event) return false;
+  if (role === 'admin') return ADMIN_EVENTS.has(event);
   if (role === 'kitchen') return KITCHEN_EVENTS.has(event);
   if (role === 'office_user') return OFFICE_EVENTS.has(event);
   return false;
 }
-
-export { OFFICE_EVENTS, KITCHEN_EVENTS };

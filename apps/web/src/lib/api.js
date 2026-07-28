@@ -57,8 +57,10 @@ function throwFriendly(errorLike) {
 }
 
 export async function api(path, options = {}) {
+  const isFormData =
+    typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers || {}),
   };
   const token = getToken();
@@ -70,7 +72,11 @@ export async function api(path, options = {}) {
     res = await fetch(`${base}${path}`, {
       ...options,
       headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      body: isFormData
+        ? options.body
+        : options.body
+          ? JSON.stringify(options.body)
+          : undefined,
     });
   } catch (networkErr) {
     if (import.meta.env.DEV) {

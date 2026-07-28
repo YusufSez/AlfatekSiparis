@@ -146,10 +146,12 @@ describe('SESSION', () => {
 
     const notes = await prisma.userNotification.findMany({
       where: { event: 'kitchen:staff_call' },
+      include: { user: { select: { role: true } } },
     });
     expect(notes.length).toBeGreaterThan(0);
     expect(notes[0].title).toBe('Cemile Abla');
     expect(notes[0].body).toContain('Teknik Ofis');
+    expect(notes.every((n) => n.user.role === 'kitchen')).toBe(true);
 
     const second = await request(app).post('/sessions/staff-call').set(authHeader(t)).send({});
     expect(second.status).toBe(429);

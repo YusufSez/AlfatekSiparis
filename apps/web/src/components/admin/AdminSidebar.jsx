@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../lib/auth';
-import { initials } from '../../lib/format';
+import { Avatar } from '../Avatar';
 import Tooltip from '../ui/Tooltip';
 
 const NAV = [
@@ -116,9 +116,7 @@ export default function AdminSidebar({ collapsed, onToggle, mobileOpen, onCloseM
               title="Profil"
               onClick={onCloseMobile}
             >
-              <span className="avatar sm" aria-hidden>
-                {initials(user?.name)}
-              </span>
+              <Avatar name={user?.name} avatarUrl={user?.avatarUrl} size="sm" />
               {showLabels && <span className="sidebar-label">Profil</span>}
             </NavLink>
           </Tooltip>

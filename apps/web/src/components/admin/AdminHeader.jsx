@@ -3,8 +3,8 @@ import Breadcrumb from '../ui/Breadcrumb';
 import NotificationCenter from '../NotificationCenter';
 import { useTheme } from '../../lib/theme';
 import { useAuth } from '../../lib/auth';
-import { initials } from '../../lib/format';
 import { roleLabel } from '../../lib/uxLabels';
+import { Avatar } from '../Avatar';
 
 export default function AdminHeader({ breadcrumb = [], onSearch, searchValue, onSearchChange, onOpenMobileNav }) {
   const theme = useTheme();
@@ -37,9 +37,7 @@ export default function AdminHeader({ breadcrumb = [], onSearch, searchValue, on
           {theme.isDark ? '☀' : '🌙'}
         </button>
         <Link to="/admin/profile" className="profile-chip admin-profile-chip" title="Profil">
-          <span className="avatar" aria-hidden>
-            {initials(user?.name)}
-          </span>
+          <Avatar name={user?.name} avatarUrl={user?.avatarUrl} />
           <span className="profile-chip-meta">
             <strong>{user?.name}</strong>
             <small>{roleLabel(user?.role)}</small>

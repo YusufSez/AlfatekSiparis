@@ -5,7 +5,8 @@ import Button from '../ui/Button';
 import { api } from '../../lib/api';
 import { useAdminData } from '../../lib/adminData';
 import { useConfirm } from '../../lib/confirm';
-import { formatDateTime, initials } from '../../lib/format';
+import { formatDateTime } from '../../lib/format';
+import { Avatar } from '../Avatar';
 import { ROLE_META } from '../../lib/uxLabels';
 
 export default function OfficeDetailModal({ office, onClose, onEdit }) {
@@ -197,7 +198,7 @@ export default function OfficeDetailModal({ office, onClose, onEdit }) {
                     <tr key={u.id} className={!u.active ? 'row-muted' : ''}>
                       <td>
                         <div className="user-cell">
-                          <span className="avatar sm">{initials(u.name)}</span>
+                          <Avatar name={u.name} avatarUrl={u.avatarUrl} size="sm" />
                           <div>
                             <strong>{u.name}</strong>
                             <div className="muted">@{u.username}</div>

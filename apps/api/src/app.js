@@ -9,6 +9,7 @@ import { openApiSpec } from './common/openapi.js';
 import { logger } from './common/logger.js';
 import { metricsMiddleware, renderPrometheusMetrics } from './common/metrics.js';
 import { buildCorsOriginOption } from './common/corsOrigin.js';
+import { AVATARS_DIR, ensureAvatarsDir } from './common/avatarStorage.js';
 import authRoutes from './modules/auth/auth.controller.js';
 import sessionRoutes from './modules/orders/orders.controller.js';
 import kitchenRoutes from './modules/kitchen/kitchen.controller.js';
@@ -22,6 +23,8 @@ export function createApp(corsOrigin) {
   const app = express();
   const isProd = process.env.NODE_ENV === 'production';
   const isTest = process.env.NODE_ENV === 'test';
+
+  ensureAvatarsDir();
 
   app.set('trust proxy', 1);
   app.use(
@@ -48,6 +51,16 @@ export function createApp(corsOrigin) {
     next();
   });
 
+  // Public avatar files only (unique hashed names — no directory listing)
+  app.use(
+    '/uploads/avatars',
+    express.static(AVATARS_DIR, {
+      fallthrough: false,
+      index: false,
+      maxAge: isProd ? '7d' : 0,
+    })
+  );
+
   const loginLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 40,
@@ -56,6 +69,7 @@ export function createApp(corsOrigin) {
     message: { error: 'Çok fazla giriş denemesi. Bir süre sonra tekrar deneyin.' },
   });
 
+  // Remove unused path import leftovers if any
   app.use(systemRoutes);
 
   /** Production: require METRICS_TOKEN (Bearer or X-Metrics-Token). Dev/test: open. */

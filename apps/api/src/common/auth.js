@@ -84,6 +84,7 @@ export function publicUser(user) {
     office: user.office
       ? { id: user.office.id, name: user.office.name, color: user.office.color }
       : null,
+    avatarUrl: user.avatarUrl || null,
     active: user.active,
     createdAt: user.createdAt || null,
   };

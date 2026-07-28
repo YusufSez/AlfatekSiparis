@@ -499,16 +499,25 @@ body,
     width: 32px;
     height: 32px;
     min-width: 32px;
+    max-width: 32px;
     min-height: 32px;
+    max-height: 32px;
     aspect-ratio: 1 / 1;
     border-radius: 50%;
   }
 
   .avatar.xl {
-    width: 72px;
-    height: 72px;
-    min-width: 72px;
-    min-height: 72px;
+    width: 80px;
+    height: 80px;
+    min-width: 80px;
+    max-width: 80px;
+    min-height: 80px;
+    max-height: 80px;
+  }
+
+  .avatar-editor-preview {
+    width: 80px;
+    height: 80px;
   }
 
   .login-card-head h2 {
