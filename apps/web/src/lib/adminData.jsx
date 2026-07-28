@@ -1,14 +1,24 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { api } from './api';
-import { useSocket } from './socket';
+import { useSocketApi, useSocketReconnectKey } from './socket';
 import { useToast } from './toast';
 import { logSentence } from './uxLabels';
 
-const AdminDataContext = createContext(null);
+const AdminStaticContext = createContext(null);
+const AdminLiveContext = createContext(null);
 
 export function AdminDataProvider({ children }) {
-  const { on, reconnectKey, connected } = useSocket();
+  const { on } = useSocketApi();
+  const reconnectKey = useSocketReconnectKey();
   const toast = useToast();
+
   const [offices, setOffices] = useState([]);
   const [users, setUsers] = useState([]);
   const [menu, setMenu] = useState([]);
@@ -23,38 +33,58 @@ export function AdminDataProvider({ children }) {
   const [error, setError] = useState('');
   const [apiMeta, setApiMeta] = useState(null);
 
-  const refresh = useCallback(async (signal) => {
-    const [o, u, m, s, l, p, d, a, k] = await Promise.all([
-      api('/admin/offices', { signal }),
-      api('/admin/users', { signal }),
-      api('/admin/menu-items', { signal }),
-      api('/admin/settings', { signal }),
-      api('/admin/logs?take=100', { signal }),
-      api('/admin/presence', { signal }),
-      api('/admin/dashboard', { signal }),
-      api('/announcements', { signal }),
-      api('/kitchen/tickets', { signal }).catch((err) => {
+  const applyKitchenCounts = useCallback((tickets) => {
+    const list = tickets || [];
+    setPendingKitchen(list.length);
+    setKitchenStats({
+      waiting: list.filter((t) => t.status === 'new').length,
+      preparing: list.filter((t) => t.status === 'preparing').length,
+    });
+  }, []);
+
+  const refresh = useCallback(
+    async (signal) => {
+      const [o, u, m, s, l, p, d, a, k] = await Promise.all([
+        api('/admin/offices', { signal }),
+        api('/admin/users', { signal }),
+        api('/admin/menu-items', { signal }),
+        api('/admin/settings', { signal }),
+        api('/admin/logs?take=100', { signal }),
+        api('/admin/presence', { signal }),
+        api('/admin/dashboard', { signal }),
+        api('/announcements', { signal }),
+        api('/kitchen/tickets', { signal }).catch((err) => {
+          if (err?.name === 'AbortError') throw err;
+          return { tickets: [] };
+        }),
+      ]);
+      if (signal?.aborted) return;
+      setOffices(o.offices);
+      setUsers(u.users);
+      setMenu(m.items);
+      setSettings(s.settings);
+      setLogs(l.logs);
+      setPresence(p.offices);
+      setDashboard(d);
+      setAnnouncements(a.announcements);
+      applyKitchenCounts(k.tickets);
+      setError('');
+    },
+    [applyKitchenCounts]
+  );
+
+  /** Soft reconnect: kitchen counters only (presence via socket; static data kept). */
+  const softReconnect = useCallback(
+    async (signal) => {
+      const k = await api('/kitchen/tickets', { signal }).catch((err) => {
         if (err?.name === 'AbortError') throw err;
         return { tickets: [] };
-      }),
-    ]);
-    if (signal?.aborted) return;
-    setOffices(o.offices);
-    setUsers(u.users);
-    setMenu(m.items);
-    setSettings(s.settings);
-    setLogs(l.logs);
-    setPresence(p.offices);
-    setDashboard(d);
-    setAnnouncements(a.announcements);
-    const tickets = k.tickets || [];
-    setPendingKitchen(tickets.length);
-    setKitchenStats({
-      waiting: tickets.filter((t) => t.status === 'new').length,
-      preparing: tickets.filter((t) => t.status === 'preparing').length,
-    });
-    setError('');
-  }, []);
+      });
+      if (signal?.aborted) return;
+      applyKitchenCounts(k.tickets);
+    },
+    [applyKitchenCounts]
+  );
 
   useEffect(() => {
     const ac = new AbortController();
@@ -67,7 +97,17 @@ export function AdminDataProvider({ children }) {
         if (!ac.signal.aborted) setBooting(false);
       });
     return () => ac.abort();
-  }, [reconnectKey, refresh]);
+  }, [refresh]);
+
+  useEffect(() => {
+    if (reconnectKey === 0) return;
+    const ac = new AbortController();
+    softReconnect(ac.signal).catch((e) => {
+      if (e?.name === 'AbortError' || ac.signal.aborted) return;
+      setError(e.message);
+    });
+    return () => ac.abort();
+  }, [reconnectKey, softReconnect]);
 
   useEffect(() => {
     api('/version')
@@ -76,14 +116,31 @@ export function AdminDataProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    return on('presence:update', () => {
-      api('/admin/presence')
-        .then((p) => setPresence(p.offices))
-        .catch(() => {});
-      api('/admin/dashboard')
-        .then(setDashboard)
-        .catch(() => {});
+    let dashboardTimer = null;
+    const off = on('presence:update', (payload) => {
+      const officeId = payload?.officeId;
+      if (officeId) {
+        setPresence((prev) =>
+          prev.map((block) =>
+            block.office?.id === officeId
+              ? { ...block, users: payload.users || [] }
+              : block
+          )
+        );
+      }
+
+      if (dashboardTimer) clearTimeout(dashboardTimer);
+      dashboardTimer = setTimeout(() => {
+        dashboardTimer = null;
+        api('/admin/dashboard')
+          .then(setDashboard)
+          .catch(() => {});
+      }, 2500);
     });
+    return () => {
+      off();
+      if (dashboardTimer) clearTimeout(dashboardTimer);
+    };
   }, [on]);
 
   const onlineMap = useMemo(() => {
@@ -103,15 +160,47 @@ export function AdminDataProvider({ children }) {
     return map;
   }, [logs]);
 
+  const userMap = useMemo(() => {
+    const map = new Map();
+    for (const u of users) map.set(u.id, u);
+    return map;
+  }, [users]);
+
+  const officeMap = useMemo(() => {
+    const map = new Map();
+    for (const u of users) {
+      if (!u.officeId) continue;
+      let list = map.get(u.officeId);
+      if (!list) {
+        list = [];
+        map.set(u.officeId, list);
+      }
+      list.push(u);
+    }
+    return map;
+  }, [users]);
+
+  const lastOrderLogByOffice = useMemo(() => {
+    const map = new Map();
+    const orderAction = /session\.|ticket\.|kitchen\./;
+    for (const l of logs) {
+      if (!orderAction.test(l.action || '')) continue;
+      const actor = userMap.get(l.actor?.id);
+      const officeId = actor?.officeId;
+      if (!officeId || map.has(officeId)) continue;
+      map.set(officeId, l);
+    }
+    return map;
+  }, [logs, userMap]);
+
   const officeStats = useMemo(() => {
     return offices.map((o) => {
-      const members = users.filter((u) => u.officeId === o.id);
-      const onlineCount = members.filter((u) => onlineMap.get(u.id)).length;
-      const officeLogs = logs.filter((l) => {
-        const actor = users.find((u) => u.id === l.actor?.id);
-        return actor?.officeId === o.id && /session\.|ticket\.|kitchen\./.test(l.action || '');
-      });
-      const lastOrderLog = officeLogs[0] || null;
+      const members = officeMap.get(o.id) || [];
+      let onlineCount = 0;
+      for (const u of members) {
+        if (onlineMap.get(u.id)) onlineCount += 1;
+      }
+      const lastOrderLog = lastOrderLogByOffice.get(o.id) || null;
       return {
         office: o,
         members,
@@ -121,13 +210,13 @@ export function AdminDataProvider({ children }) {
         lastOrderText: lastOrderLog ? logSentence(lastOrderLog) : null,
       };
     });
-  }, [offices, users, onlineMap, logs]);
+  }, [offices, officeMap, onlineMap, lastOrderLogByOffice]);
 
   const enrichLogs = useCallback(
     (list) =>
       list.map((l) => {
         if (!l.actor) return l;
-        const full = users.find((u) => u.id === l.actor.id);
+        const full = userMap.get(l.actor.id);
         return {
           ...l,
           actor: {
@@ -136,30 +225,23 @@ export function AdminDataProvider({ children }) {
           },
         };
       }),
-    [users]
+    [userMap]
   );
 
-  const value = useMemo(
+  const staticValue = useMemo(
     () => ({
       offices,
       users,
       menu,
       setMenu,
       logs,
-      presence,
       settings,
       setSettings,
-      dashboard,
       announcements,
-      pendingKitchen,
-      kitchenStats,
       booting,
       error,
       setError,
-      connected,
-      onlineMap,
       lastLoginMap,
-      officeStats,
       apiMeta,
       refresh,
       enrichLogs,
@@ -170,18 +252,11 @@ export function AdminDataProvider({ children }) {
       users,
       menu,
       logs,
-      presence,
       settings,
-      dashboard,
       announcements,
-      pendingKitchen,
-      kitchenStats,
       booting,
       error,
-      connected,
-      onlineMap,
       lastLoginMap,
-      officeStats,
       apiMeta,
       refresh,
       enrichLogs,
@@ -189,11 +264,40 @@ export function AdminDataProvider({ children }) {
     ]
   );
 
-  return <AdminDataContext.Provider value={value}>{children}</AdminDataContext.Provider>;
+  const liveValue = useMemo(
+    () => ({
+      presence,
+      dashboard,
+      pendingKitchen,
+      kitchenStats,
+      onlineMap,
+      officeStats,
+    }),
+    [presence, dashboard, pendingKitchen, kitchenStats, onlineMap, officeStats]
+  );
+
+  return (
+    <AdminStaticContext.Provider value={staticValue}>
+      <AdminLiveContext.Provider value={liveValue}>{children}</AdminLiveContext.Provider>
+    </AdminStaticContext.Provider>
+  );
 }
 
-export function useAdminData() {
-  const ctx = useContext(AdminDataContext);
-  if (!ctx) throw new Error('useAdminData must be used within AdminDataProvider');
+export function useAdminStatic() {
+  const ctx = useContext(AdminStaticContext);
+  if (!ctx) throw new Error('useAdminStatic must be used within AdminDataProvider');
   return ctx;
+}
+
+export function useAdminLive() {
+  const ctx = useContext(AdminLiveContext);
+  if (!ctx) throw new Error('useAdminLive must be used within AdminDataProvider');
+  return ctx;
+}
+
+/** Merges static + live (re-renders on either). Prefer useAdminStatic / useAdminLive. */
+export function useAdminData() {
+  const staticCtx = useAdminStatic();
+  const liveCtx = useAdminLive();
+  return useMemo(() => ({ ...staticCtx, ...liveCtx }), [staticCtx, liveCtx]);
 }

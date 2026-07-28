@@ -1,17 +1,60 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useSocket } from '../lib/socket';
+import { useSocketApi, useSocketReconnectKey } from '../lib/socket';
 import { useCountdown } from '../lib/useCountdown';
 import { useConfirm } from '../lib/confirm';
 import { useToast } from '../lib/toast';
 import { iconMeta } from '../lib/uxLabels';
 import AppHeader from '../components/AppHeader';
 import AnnouncementBanner from '../components/AnnouncementBanner';
-import { Skeleton, LoadError, OfflineBanner, EmptyState } from '../components/LoadStates';
-import { useOnline } from '../lib/useOnline';
+import { Skeleton, LoadError, EmptyState } from '../components/LoadStates';
+import { SocketConnectionLabel, SocketOfflineBanner } from '../components/SocketStatus';
 import { StatusDot } from '../components/Badge';
 import { Avatar } from '../components/Avatar';
+
+function timerToneFromRemaining(remaining) {
+  if (remaining > 0 && remaining <= 5) return 'final';
+  if (remaining > 0 && remaining <= 10) return 'critical';
+  if (remaining > 0 && remaining <= 30) return 'warn';
+  return '';
+}
+
+/** Owns the 1s tick so OfficePage (menu/presence/history) does not re-render every second. */
+const OfficeSessionTimer = memo(function OfficeSessionTimer({ endsAt, openedByName, isDispatching }) {
+  const { label, urgent, remaining } = useCountdown(endsAt);
+  const timerTone = timerToneFromRemaining(remaining);
+
+  return (
+    <section
+      className={`office-timer-section tone-${timerTone} ${urgent ? 'urgent' : ''} ${
+        isDispatching ? 'is-dispatching' : ''
+      }`}
+    >
+      <p className="eyebrow">Aktif Sipariş</p>
+      <p className="session-opener muted">{openedByName} sipariş topluyor</p>
+      <div className="office-timer-slot">
+        {isDispatching ? (
+          <div className="timer mega countdown-hero dispatching" aria-live="polite">
+            <strong className="dispatch-text">Sipariş mutfağa gönderiliyor…</strong>
+            <small>Lütfen bekleyin</small>
+          </div>
+        ) : (
+          <div
+            className={`timer mega countdown-hero tone-${timerTone} ${
+              timerTone === 'final' ? 'pulse-final' : timerTone === 'critical' ? 'pulse' : ''
+            }`}
+            aria-live="polite"
+          >
+            <strong>{label}</strong>
+            <small>{remaining === 0 ? 'Kapanıyor' : 'Kalan Süre'}</small>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+});
+
 function eventLabel(type, actor, payload) {
   const who = actor?.name || 'Sistem';
   switch (type) {
@@ -380,10 +423,10 @@ function OrderHistoryAccordion({ entries }) {
 
 export default function OfficePage() {
   const { user, logout } = useAuth();
-  const { on, connected, reconnectKey } = useSocket();
+  const { on } = useSocketApi();
+  const reconnectKey = useSocketReconnectKey();
   const { confirm: confirmDialog } = useConfirm();
   const toast = useToast();
-  const online = useOnline(connected);
   const [session, setSession] = useState(null);
   const [menu, setMenu] = useState([]);
   const [events, setEvents] = useState([]);
@@ -406,7 +449,6 @@ export default function OfficePage() {
   /** Per menuItemId: coalesce rapid taps, serialize POSTs, always apply latest qty. */
   const lineQueuesRef = useRef(new Map());
   const timersRef = useRef(new Set());
-  const { label, urgent, remaining } = useCountdown(session?.endsAt);
 
   function scheduleTimeout(fn, ms) {
     const id = setTimeout(() => {
@@ -455,7 +497,7 @@ export default function OfficePage() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, user?.officeId, reconnectKey]);
+  }, [user?.id, user?.officeId]);
 
   const rememberSentOrder = useCallback(
     (sourceOrReceipt) => {
@@ -499,16 +541,18 @@ export default function OfficePage() {
     });
   }, [orderHistory, lastSentOrder]);
 
-  const load = useCallback(async (signal) => {
-    const [active, menuRes, presenceRes] = await Promise.all([
-      api('/sessions/active', { signal }),
-      api('/menu', { signal }),
-      api('/sessions/presence', { signal }),
-    ]);
+  const load = useCallback(async (signal, { includePresence = true } = {}) => {
+    const reqs = [api('/sessions/active', { signal }), api('/menu', { signal })];
+    if (includePresence) reqs.push(api('/sessions/presence', { signal }));
+    const [active, menuRes, presenceRes] = await Promise.all(reqs);
     if (signal?.aborted) return;
     setSession(active.session);
     setMenu(menuRes.items);
-    setPresence(presenceRes.users || active.session?.presence || []);
+    if (includePresence) {
+      setPresence(presenceRes?.users || active.session?.presence || []);
+    } else if (active.session?.presence) {
+      setPresence(active.session.presence);
+    }
     if (active.session) {
       setOrderPhase('collecting');
       const ev = await api(`/sessions/${active.session.id}/events`, { signal });
@@ -521,9 +565,10 @@ export default function OfficePage() {
     }
   }, []);
 
+  // Initial boot: session + menu + presence
   useEffect(() => {
     const ac = new AbortController();
-    load(ac.signal)
+    load(ac.signal, { includePresence: true })
       .catch((e) => {
         if (e?.name === 'AbortError' || ac.signal.aborted) return;
         setError(e.message);
@@ -534,6 +579,17 @@ export default function OfficePage() {
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission().catch(() => {});
     }
+    return () => ac.abort();
+  }, [load]);
+
+  // Soft reconnect: session + menu only (presence/history via socket / local cache)
+  useEffect(() => {
+    if (reconnectKey === 0) return;
+    const ac = new AbortController();
+    load(ac.signal, { includePresence: false }).catch((e) => {
+      if (e?.name === 'AbortError' || ac.signal.aborted) return;
+      setError(e.message);
+    });
     return () => ac.abort();
   }, [load, reconnectKey]);
 
@@ -615,7 +671,7 @@ export default function OfficePage() {
       })
       .catch(() => {});
     return () => ac.abort();
-  }, [session?.id, session?.lines?.length, session?.skippedUsers?.length, session?.status]);
+  }, [session?.id]);
 
   const myQty = useMemo(() => {
     const map = {};
@@ -633,15 +689,6 @@ export default function OfficePage() {
   const regularMenu = useMemo(() => menu.filter((item) => !isOtherItem(item)), [menu]);
 
   const presenceList = presence.length ? presence : session?.presence || [];
-
-  const timerTone =
-    remaining > 0 && remaining <= 5
-      ? 'final'
-      : remaining > 0 && remaining <= 10
-        ? 'critical'
-        : remaining > 0 && remaining <= 30
-          ? 'warn'
-          : '';
 
   const statusMeta = {
     collecting: { icon: '🟡', title: 'Sipariş Toplanıyor', hint: 'Herkes seçimini yapsın' },
@@ -895,7 +942,7 @@ export default function OfficePage() {
     <div className="page">
       <AppHeader
         title={user.office?.name || 'Ofis'}
-        subtitle={connected ? 'Canlı bağlantı' : 'Yeniden bağlanıyor…'}
+        subtitle={<SocketConnectionLabel online="Canlı bağlantı" offline="Yeniden bağlanıyor…" />}
         accent={user.office?.color}
         onLogout={logout}
         userName={user.name}
@@ -903,7 +950,7 @@ export default function OfficePage() {
 
       <main className="content">
         <AnnouncementBanner />
-        <OfflineBanner online={online} onRetry={() => load().catch((e) => setError(e.message))} />
+        <SocketOfflineBanner onRetry={() => load().catch((e) => setError(e.message))} />
         {shortageAlert && (
           <div className="shortage-alert" role="status">
             <div className="shortage-alert-main">
@@ -1099,32 +1146,11 @@ export default function OfficePage() {
 
             {session && (
               <>
-                <section
-                  className={`office-timer-section tone-${timerTone} ${urgent ? 'urgent' : ''} ${
-                    activePhase === 'dispatching' ? 'is-dispatching' : ''
-                  }`}
-                >
-                  <p className="eyebrow">Aktif Sipariş</p>
-                  <p className="session-opener muted">{session.openedBy.name} sipariş topluyor</p>
-                  <div className="office-timer-slot">
-                    {activePhase === 'dispatching' ? (
-                      <div className="timer mega countdown-hero dispatching" aria-live="polite">
-                        <strong className="dispatch-text">Sipariş mutfağa gönderiliyor…</strong>
-                        <small>Lütfen bekleyin</small>
-                      </div>
-                    ) : (
-                      <div
-                        className={`timer mega countdown-hero tone-${timerTone} ${
-                          timerTone === 'final' ? 'pulse-final' : timerTone === 'critical' ? 'pulse' : ''
-                        }`}
-                        aria-live="polite"
-                      >
-                        <strong>{label}</strong>
-                        <small>{remaining === 0 ? 'Kapanıyor' : 'Kalan Süre'}</small>
-                      </div>
-                    )}
-                  </div>
-                </section>
+                <OfficeSessionTimer
+                  endsAt={session.endsAt}
+                  openedByName={session.openedBy.name}
+                  isDispatching={activePhase === 'dispatching'}
+                />
 
                 {status && (
                   <section className={`office-phase-card phase-${activePhase}`}>

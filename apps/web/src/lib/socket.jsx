@@ -1,9 +1,22 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { io } from 'socket.io-client';
 import { getToken, resolveApiBaseUrl } from './api';
 import { useAuth } from './auth';
 
-const SocketContext = createContext(null);
+/** Stable API: subscribe to events (does not change on connect/disconnect). */
+const SocketApiContext = createContext(null);
+/** Only flips on connect/disconnect — isolate UI that shows connection status. */
+const SocketConnectedContext = createContext(false);
+/** Bumps only after reconnect — drives soft hydrate without notifying `on` consumers. */
+const SocketReconnectContext = createContext(0);
 
 const EVENTS = [
   'session:opened',
@@ -27,6 +40,12 @@ export function SocketProvider({ children }) {
   const [reconnectKey, setReconnectKey] = useState(0);
   const handlers = useRef(new Map());
   const hadConnect = useRef(false);
+
+  const on = useCallback((event, fn) => {
+    if (!handlers.current.has(event)) handlers.current.set(event, new Set());
+    handlers.current.get(event).add(fn);
+    return () => handlers.current.get(event)?.delete(fn);
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -70,23 +89,46 @@ export function SocketProvider({ children }) {
     };
   }, [user?.id]);
 
-  const value = useMemo(
-    () => ({
-      socket,
-      connected,
-      reconnectKey,
-      on(event, fn) {
-        if (!handlers.current.has(event)) handlers.current.set(event, new Set());
-        handlers.current.get(event).add(fn);
-        return () => handlers.current.get(event)?.delete(fn);
-      },
-    }),
-    [socket, connected, reconnectKey]
-  );
+  const apiValue = useMemo(() => ({ socket, on }), [socket, on]);
 
-  return <SocketContext.Provider value={value}>{children}</SocketContext.Provider>;
+  return (
+    <SocketApiContext.Provider value={apiValue}>
+      <SocketConnectedContext.Provider value={connected}>
+        <SocketReconnectContext.Provider value={reconnectKey}>
+          {children}
+        </SocketReconnectContext.Provider>
+      </SocketConnectedContext.Provider>
+    </SocketApiContext.Provider>
+  );
 }
 
+/** Event subscribe + raw socket. Stable across connect flips. */
+export function useSocketApi() {
+  const ctx = useContext(SocketApiContext);
+  if (!ctx) throw new Error('useSocketApi must be used within SocketProvider');
+  return ctx;
+}
+
+export function useSocketConnected() {
+  return useContext(SocketConnectedContext);
+}
+
+export function useSocketReconnectKey() {
+  return useContext(SocketReconnectContext);
+}
+
+/** Compat: merges all socket slices (re-renders on any change). Prefer specific hooks. */
 export function useSocket() {
-  return useContext(SocketContext);
+  const api = useContext(SocketApiContext);
+  const connected = useContext(SocketConnectedContext);
+  const reconnectKey = useContext(SocketReconnectContext);
+  return useMemo(
+    () => ({
+      socket: api?.socket ?? null,
+      on: api?.on,
+      connected,
+      reconnectKey,
+    }),
+    [api, connected, reconnectKey]
+  );
 }

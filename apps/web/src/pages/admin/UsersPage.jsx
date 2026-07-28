@@ -8,7 +8,7 @@ import Modal from '../../components/Modal';
 import { Badge } from '../../components/Badge';
 import { EmptyState, TableSkeleton } from '../../components/LoadStates';
 import { api } from '../../lib/api';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic, useAdminLive } from '../../lib/adminData';
 import { useAuth } from '../../lib/auth';
 import { useConfirm } from '../../lib/confirm';
 import { formatDateTime } from '../../lib/format';
@@ -19,7 +19,8 @@ export default function UsersPage() {
   const [params] = useSearchParams();
   const { user: me } = useAuth();
   const { confirm } = useConfirm();
-  const { users, offices, onlineMap, lastLoginMap, refresh, notify, booting } = useAdminData();
+  const { users, offices, lastLoginMap, refresh, notify, booting } = useAdminStatic();
+  const { onlineMap } = useAdminLive();
   const [q, setQ] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [officeFilter, setOfficeFilter] = useState('all');

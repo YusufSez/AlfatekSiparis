@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { APP_VERSION } from '../../lib/format';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic } from '../../lib/adminData';
 
 export default function AdminFooter() {
-  const { apiMeta } = useAdminData();
+  const { apiMeta } = useAdminStatic();
   const [build, setBuild] = useState('');
 
   useEffect(() => {

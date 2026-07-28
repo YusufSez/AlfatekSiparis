@@ -2,14 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useSocket } from '../lib/socket';
+import { useSocketApi } from '../lib/socket';
 import { notificationDedupeKey, showOsNotification } from '../lib/osNotify';
 import { isNotificationEventAllowed } from '../lib/notificationRoles';
 import { playOrderNotificationSound } from '../lib/orderSound';
 
 export default function NotificationCenter() {
   const { user } = useAuth();
-  const { on } = useSocket();
+  const { on } = useSocketApi();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const wrapRef = useRef(null);

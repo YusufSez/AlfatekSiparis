@@ -3,10 +3,11 @@ import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import { EmptyState } from '../../components/LoadStates';
 import { api } from '../../lib/api';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic, useAdminLive } from '../../lib/adminData';
 
 export default function SettingsPage() {
-  const { settings, setSettings, notify, presence, users, onlineMap, officeStats } = useAdminData();
+  const { settings, setSettings, notify, users } = useAdminStatic();
+  const { presence, onlineMap, officeStats } = useAdminLive();
   const [busy, setBusy] = useState(false);
 
   const live = useMemo(() => {

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import StatsCard from '../../components/ui/StatsCard';
 import PageHeader from '../../components/ui/PageHeader';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic, useAdminLive } from '../../lib/adminData';
 import { logSentence } from '../../lib/uxLabels';
 import { formatDateTime } from '../../lib/format';
 import { Badge } from '../../components/Badge';
@@ -10,17 +10,8 @@ import { EmptyState } from '../../components/LoadStates';
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const {
-    dashboard,
-    kitchenStats,
-    offices,
-    officeStats,
-    enrichLogs,
-    logs,
-    announcements,
-    users,
-    onlineMap,
-  } = useAdminData();
+  const { offices, enrichLogs, logs, announcements, users } = useAdminStatic();
+  const { dashboard, kitchenStats, officeStats, onlineMap } = useAdminLive();
   const cards = dashboard?.cards;
   const charts = dashboard?.charts;
   const recent = enrichLogs(logs).slice(0, 14);

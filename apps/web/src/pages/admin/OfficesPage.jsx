@@ -8,13 +8,14 @@ import Modal from '../../components/Modal';
 import { EmptyState } from '../../components/LoadStates';
 import { Badge } from '../../components/Badge';
 import { api } from '../../lib/api';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic, useAdminLive } from '../../lib/adminData';
 import { useConfirm } from '../../lib/confirm';
 import { formatDateTime } from '../../lib/format';
 
 export default function OfficesPage() {
   const [params, setParams] = useSearchParams();
-  const { officeStats, refresh, notify } = useAdminData();
+  const { refresh, notify } = useAdminStatic();
+  const { officeStats } = useAdminLive();
   const { confirm } = useConfirm();
   const [detailId, setDetailId] = useState(params.get('detail'));
   const [editOffice, setEditOffice] = useState(null);

@@ -4,7 +4,7 @@ import Button from '../../components/ui/Button';
 import { Badge } from '../../components/Badge';
 import { EmptyState } from '../../components/LoadStates';
 import { api } from '../../lib/api';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic } from '../../lib/adminData';
 import { useConfirm } from '../../lib/confirm';
 import { formatDateTime } from '../../lib/format';
 
@@ -15,7 +15,7 @@ const SEV_LABEL = {
 };
 
 export default function AnnouncementsPage() {
-  const { announcements, users, refresh, notify } = useAdminData();
+  const { announcements, users, refresh, notify } = useAdminStatic();
   const { confirm } = useConfirm();
   const [busy, setBusy] = useState(false);
   const [activeDraft, setActiveDraft] = useState(true);

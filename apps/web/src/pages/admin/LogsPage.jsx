@@ -3,12 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/ui/PageHeader';
 import LogEntry from '../../components/LogEntry';
 import { EmptyState } from '../../components/LoadStates';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic } from '../../lib/adminData';
 import { logSentence } from '../../lib/uxLabels';
 
 export default function LogsPage() {
   const [params] = useSearchParams();
-  const { logs, users, offices, enrichLogs } = useAdminData();
+  const { logs, users, offices, enrichLogs } = useAdminStatic();
   const [q, setQ] = useState('');
   const [range, setRange] = useState(params.get('range') || 'all');
   const [category, setCategory] = useState(params.get('category') || 'all');

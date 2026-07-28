@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useToast } from '../lib/toast';
+import { prepareSquareAvatarFile } from '../lib/prepareAvatar';
 import { Avatar } from './Avatar';
 import Button from './ui/Button';
 
@@ -29,8 +30,10 @@ export default function AvatarEditor({ user, onUpdated }) {
 
     setBusy(true);
     try {
+      // Center-crop to square + 512px so portrait/landscape/square all look sharp.
+      const prepared = await prepareSquareAvatarFile(file, 512);
       const body = new FormData();
-      body.append('avatar', file);
+      body.append('avatar', prepared);
       const data = await api('/auth/avatar', { method: 'POST', body });
       onUpdated?.(data.user);
       toast.success('Profil fotoğrafınız güncellendi.');

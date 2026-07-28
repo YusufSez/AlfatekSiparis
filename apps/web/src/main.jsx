@@ -1,7 +1,7 @@
-import { StrictMode } from 'react';
+import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { AuthProvider } from './lib/auth';
+import { AuthProvider, useAuth } from './lib/auth';
 import { SocketProvider } from './lib/socket';
 import { ThemeProvider } from './lib/theme';
 import { ToastProvider } from './lib/toast';
@@ -13,7 +13,16 @@ import './_mobile.css';
 import './_polish.css';
 import { preloadOrderNotificationSound } from './lib/orderSound';
 
-preloadOrderNotificationSound();
+/** Preload order sound only for office/kitchen roles after auth (not login/admin). */
+function OrderSoundPreload() {
+  const { user } = useAuth();
+  useEffect(() => {
+    if (user?.role === 'office_user' || user?.role === 'kitchen') {
+      preloadOrderNotificationSound();
+    }
+  }, [user?.role]);
+  return null;
+}
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
@@ -24,6 +33,7 @@ createRoot(document.getElementById('root')).render(
             <BrowserRouter>
               <AuthProvider>
                 <SocketProvider>
+                  <OrderSoundPreload />
                   <App />
                 </SocketProvider>
               </AuthProvider>

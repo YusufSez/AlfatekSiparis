@@ -5,14 +5,14 @@ import Tooltip from '../../components/ui/Tooltip';
 import { Badge } from '../../components/Badge';
 import { EmptyState } from '../../components/LoadStates';
 import { api } from '../../lib/api';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic } from '../../lib/adminData';
 import { useConfirm } from '../../lib/confirm';
 import { ICON_META, iconMeta } from '../../lib/uxLabels';
 
 const ICON_OPTIONS = Object.entries(ICON_META).filter(([k]) => k !== 'cup');
 
 export default function MenuPage() {
-  const { menu, setMenu, refresh, notify } = useAdminData();
+  const { menu, setMenu, refresh, notify } = useAdminStatic();
   const { confirm } = useConfirm();
   const [iconDraft, setIconDraft] = useState('tea');
   const [dragId, setDragId] = useState(null);

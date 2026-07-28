@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useSocket } from '../lib/socket';
+import { useSocketApi, useSocketReconnectKey } from '../lib/socket';
 import { useConfirm } from '../lib/confirm';
 import { useToast } from '../lib/toast';
 import AppHeader from '../components/AppHeader';
 import AnnouncementBanner from '../components/AnnouncementBanner';
 import Modal from '../components/Modal';
-import { LoadError, OfflineBanner, EmptyState, CardSkeleton } from '../components/LoadStates';
-import { useOnline } from '../lib/useOnline';
+import { LoadError, EmptyState, CardSkeleton } from '../components/LoadStates';
+import { SocketConnectionLabel, SocketOfflineBanner } from '../components/SocketStatus';
 import { iconMeta } from '../lib/uxLabels';
 
 const STATUS_LABEL = {
@@ -18,6 +18,19 @@ const STATUS_LABEL = {
 };
 
 const STATUS_RANK = { new: 0, preparing: 1, delivered: 2 };
+
+const KitchenClockContext = createContext(Date.now());
+
+/** One shared 1s clock for all preparing timers on the board. */
+function KitchenClockProvider({ active, children }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return undefined;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  return <KitchenClockContext.Provider value={now}>{children}</KitchenClockContext.Provider>;
+}
 
 function asSummaryList(summary) {
   return Array.isArray(summary) ? summary : [];
@@ -70,16 +83,12 @@ function formatElapsed(ms) {
 }
 
 function PreparingTimer({ since }) {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 1000);
-    return () => clearInterval(id);
-  }, [since]);
+  const now = useContext(KitchenClockContext);
   if (!since) return null;
   return (
     <div className="prep-timer" aria-live="polite">
       <span className="prep-timer-label">Hazırlanıyor</span>
-      <strong className="prep-timer-value">{formatElapsed(Date.now() - new Date(since).getTime())}</strong>
+      <strong className="prep-timer-value">{formatElapsed(now - new Date(since).getTime())}</strong>
     </div>
   );
 }
@@ -136,10 +145,10 @@ function SpecialNotesBox({ notes }) {
 
 export default function KitchenPage() {
   const { logout } = useAuth();
-  const { on, connected, reconnectKey } = useSocket();
+  const { on } = useSocketApi();
+  const reconnectKey = useSocketReconnectKey();
   const { confirm: confirmDialog } = useConfirm();
   const toast = useToast();
-  const online = useOnline(connected);
   const [tickets, setTickets] = useState([]);
   const [history, setHistory] = useState([]);
   const [expanded, setExpanded] = useState({});
@@ -222,16 +231,26 @@ export default function KitchenPage() {
     }
   }
 
-  const load = useCallback(async (signal) => {
-    const [data, hist] = await Promise.all([
-      api('/kitchen/tickets', { signal }),
-      api('/kitchen/tickets?status=delivered&take=20', { signal }),
-    ]);
+  const loadTickets = useCallback(async (signal) => {
+    const data = await api('/kitchen/tickets', { signal });
     if (signal?.aborted) return;
     setTickets(data.tickets);
+  }, []);
+
+  const loadHistory = useCallback(async (signal) => {
+    const hist = await api('/kitchen/tickets?status=delivered&take=20', { signal });
+    if (signal?.aborted) return;
     setHistory(hist.tickets || []);
   }, []);
 
+  const load = useCallback(
+    async (signal) => {
+      await Promise.all([loadTickets(signal), loadHistory(signal)]);
+    },
+    [loadTickets, loadHistory]
+  );
+
+  // Boot: tickets + history
   useEffect(() => {
     const ac = new AbortController();
     load(ac.signal)
@@ -243,7 +262,18 @@ export default function KitchenPage() {
         if (!ac.signal.aborted) setBooting(false);
       });
     return () => ac.abort();
-  }, [load, reconnectKey]);
+  }, [load]);
+
+  // Soft reconnect: active tickets only
+  useEffect(() => {
+    if (reconnectKey === 0) return;
+    const ac = new AbortController();
+    loadTickets(ac.signal).catch((e) => {
+      if (e?.name === 'AbortError' || ac.signal.aborted) return;
+      setError(e.message);
+    });
+    return () => ac.abort();
+  }, [loadTickets, reconnectKey]);
 
   useEffect(() => {
     const offNew = on('kitchen:new_ticket', (ticket) => {
@@ -413,11 +443,13 @@ export default function KitchenPage() {
     [tickets]
   );
 
+  const hasPreparing = counts.preparing > 0;
+
   return (
     <div className="page kitchen kitchen-mobile">
       <AppHeader
         title="Mutfak"
-        subtitle={connected ? 'Canlı' : 'Yeniden bağlanıyor…'}
+        subtitle={<SocketConnectionLabel online="Canlı" offline="Yeniden bağlanıyor…" />}
         onLogout={logout}
         accent="var(--accent-2)"
       />
@@ -442,7 +474,7 @@ export default function KitchenPage() {
             load().catch((e) => setError(e.message));
           }}
         />
-        <OfflineBanner online={online} onRetry={() => load().catch((e) => setError(e.message))} />
+        <SocketOfflineBanner onRetry={() => load().catch((e) => setError(e.message))} />
 
         {booting ? (
           <CardSkeleton count={2} />
@@ -453,6 +485,7 @@ export default function KitchenPage() {
             description="Ofislerden onaylanan siparişler burada görünür."
           />
         ) : (
+          <KitchenClockProvider active={hasPreparing}>
           <div className="ticket-grid kitchen-queue">
             {tickets.map((ticket) => {
               const action = nextAction[ticket.status];
@@ -521,6 +554,7 @@ export default function KitchenPage() {
               );
             })}
           </div>
+          </KitchenClockProvider>
         )}
 
         <Modal

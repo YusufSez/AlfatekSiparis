@@ -1,21 +1,27 @@
+import { lazy, Suspense } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { homeFor } from './lib/format';
 import LoginPage from './pages/LoginPage';
-import AdminLoginPage from './pages/AdminLoginPage';
 import OfficePage from './pages/OfficePage';
 import KitchenPage from './pages/KitchenPage';
 import ProfilePage from './pages/ProfilePage';
 import ForbiddenPage from './pages/ForbiddenPage';
-import AdminLayout from './components/admin/AdminLayout';
-import DashboardPage from './pages/admin/DashboardPage';
-import OfficesPage from './pages/admin/OfficesPage';
-import UsersPage from './pages/admin/UsersPage';
-import MenuPage from './pages/admin/MenuPage';
-import LogsPage from './pages/admin/LogsPage';
-import AnnouncementsPage from './pages/admin/AnnouncementsPage';
-import SettingsPage from './pages/admin/SettingsPage';
-import AdminProfilePage from './pages/admin/AdminProfilePage';
+
+const AdminLoginPage = lazy(() => import('./pages/AdminLoginPage'));
+const AdminLayout = lazy(() => import('./components/admin/AdminLayout'));
+const DashboardPage = lazy(() => import('./pages/admin/DashboardPage'));
+const OfficesPage = lazy(() => import('./pages/admin/OfficesPage'));
+const UsersPage = lazy(() => import('./pages/admin/UsersPage'));
+const MenuPage = lazy(() => import('./pages/admin/MenuPage'));
+const LogsPage = lazy(() => import('./pages/admin/LogsPage'));
+const AnnouncementsPage = lazy(() => import('./pages/admin/AnnouncementsPage'));
+const SettingsPage = lazy(() => import('./pages/admin/SettingsPage'));
+const AdminProfilePage = lazy(() => import('./pages/admin/AdminProfilePage'));
+
+function BootFallback() {
+  return <div className="boot">Yükleniyor…</div>;
+}
 
 function returnPath(location) {
   return `${location.pathname}${location.search || ''}`;
@@ -25,7 +31,7 @@ function Guard({ roles, children, onForbidden = 'home', loginTo = '/login' }) {
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) return <div className="boot">Yükleniyor…</div>;
+  if (loading) return <BootFallback />;
 
   if (!user) {
     return <Navigate to={loginTo} replace state={{ from: returnPath(location) }} />;
@@ -44,7 +50,7 @@ function AdminGate() {
   const { user, loading } = useAuth();
   const location = useLocation();
 
-  if (loading) return <div className="boot">Yükleniyor…</div>;
+  if (loading) return <BootFallback />;
 
   if (!user) {
     return (
@@ -56,7 +62,11 @@ function AdminGate() {
     return <ForbiddenPage />;
   }
 
-  return <AdminLayout />;
+  return (
+    <Suspense fallback={<BootFallback />}>
+      <AdminLayout />
+    </Suspense>
+  );
 }
 
 function LoginRoute() {
@@ -78,17 +88,21 @@ function LoginRoute() {
 
 function AdminLoginRoute() {
   const { user, loading } = useAuth();
-  if (loading) return <div className="boot">Yükleniyor…</div>;
+  if (loading) return <BootFallback />;
   if (user?.role === 'admin') {
     return <Navigate to="/admin/dashboard" replace />;
   }
-  return <AdminLoginPage />;
+  return (
+    <Suspense fallback={<BootFallback />}>
+      <AdminLoginPage />
+    </Suspense>
+  );
 }
 
 export default function App() {
   const { user, loading } = useAuth();
 
-  if (loading) return <div className="boot">Yükleniyor…</div>;
+  if (loading) return <BootFallback />;
 
   return (
     <Routes>

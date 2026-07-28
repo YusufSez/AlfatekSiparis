@@ -4,10 +4,9 @@ import AdminSidebar from './AdminSidebar';
 import AdminHeader from './AdminHeader';
 import AdminFooter from './AdminFooter';
 import SearchResults from '../SearchResults';
-import { OfflineBanner, LoadError, CardSkeleton } from '../LoadStates';
-import { AdminDataProvider, useAdminData } from '../../lib/adminData';
-import { useOnline } from '../../lib/useOnline';
-import { useSocket } from '../../lib/socket';
+import { LoadError, CardSkeleton } from '../LoadStates';
+import { AdminDataProvider, useAdminStatic } from '../../lib/adminData';
+import { SocketOfflineBanner } from '../SocketStatus';
 import { api } from '../../lib/api';
 import { useToast } from '../../lib/toast';
 
@@ -27,9 +26,7 @@ function AdminShellInner() {
   const location = useLocation();
   const [params] = useSearchParams();
   const toast = useToast();
-  const { connected } = useSocket();
-  const online = useOnline(connected);
-  const { booting, error, setError, refresh, offices } = useAdminData();
+  const { booting, error, setError, refresh, offices } = useAdminStatic();
 
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -109,7 +106,7 @@ function AdminShellInner() {
           onOpenMobileNav={() => setMobileOpen(true)}
         />
         <div className="admin-content">
-          <OfflineBanner online={online} onRetry={() => refresh().catch((e) => setError(e.message))} />
+          <SocketOfflineBanner onRetry={() => refresh().catch((e) => setError(e.message))} />
           <LoadError
             message={error}
             onRetry={() => {

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { useSocket } from '../../lib/socket';
+import { useSocketConnected } from '../../lib/socket';
 import { useTheme } from '../../lib/theme';
 import { useToast } from '../../lib/toast';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic } from '../../lib/adminData';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import { Badge } from '../../components/Badge';
@@ -17,10 +17,10 @@ import { getOrderSoundEnabled, setOrderSoundEnabled } from '../../lib/orderSound
 
 export default function AdminProfilePage() {
   const { user, setUser } = useAuth();
-  const { connected } = useSocket();
+  const connected = useSocketConnected();
   const theme = useTheme();
   const toast = useToast();
-  const { lastLoginMap } = useAdminData();
+  const { lastLoginMap } = useAdminStatic();
   const [profile, setProfile] = useState(null);
   const [booting, setBooting] = useState(true);
   const [currentPassword, setCurrentPassword] = useState('');

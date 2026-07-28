@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api';
-import { useSocket } from '../lib/socket';
+import { useSocketApi } from '../lib/socket';
 
 export default function AnnouncementBanner() {
-  const { on } = useSocket();
+  const { on } = useSocketApi();
   const [items, setItems] = useState([]);
   /** Session-only dismiss: clears on full page reload / new login session */
   const [hiddenIds, setHiddenIds] = useState(() => new Set());

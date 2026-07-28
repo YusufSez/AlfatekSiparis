@@ -162,8 +162,7 @@
   }
 
   .nav-actions .avatar {
-    width: 34px;
-    height: 34px;
+    --avatar-size: 34px;
   }
 }
 

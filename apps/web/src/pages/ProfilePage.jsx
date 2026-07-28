@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useSocket } from '../lib/socket';
+import { useSocketConnected } from '../lib/socket';
 import { useTheme } from '../lib/theme';
 import { useToast } from '../lib/toast';
 import AppHeader from '../components/AppHeader';
@@ -225,7 +225,7 @@ function KitchenStats({ stats }) {
 
 export default function ProfilePage() {
   const { user, logout, setUser } = useAuth();
-  const { connected } = useSocket();
+  const connected = useSocketConnected();
   const theme = useTheme();
   const toast = useToast();
   const [profile, setProfile] = useState(null);

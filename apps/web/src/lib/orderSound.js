@@ -203,7 +203,7 @@ class OrderSoundManager {
 
 const manager = new OrderSoundManager();
 
-/** Call once at app startup. */
+/** Call after office/kitchen auth (or lazily on first play). */
 export function preloadOrderNotificationSound() {
   return manager.preload();
 }

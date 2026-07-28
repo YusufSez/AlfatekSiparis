@@ -3,22 +3,15 @@ import Modal from '../Modal';
 import { Badge, StatusDot } from '../Badge';
 import Button from '../ui/Button';
 import { api } from '../../lib/api';
-import { useAdminData } from '../../lib/adminData';
+import { useAdminStatic, useAdminLive } from '../../lib/adminData';
 import { useConfirm } from '../../lib/confirm';
 import { formatDateTime } from '../../lib/format';
 import { Avatar } from '../Avatar';
 import { ROLE_META } from '../../lib/uxLabels';
 
 export default function OfficeDetailModal({ office, onClose, onEdit }) {
-  const {
-    users,
-    offices,
-    onlineMap,
-    logs,
-    refresh,
-    notify,
-    setError,
-  } = useAdminData();
+  const { users, offices, logs, refresh, notify, setError } = useAdminStatic();
+  const { onlineMap } = useAdminLive();
   const { confirm } = useConfirm();
   const [addUserId, setAddUserId] = useState('');
   const [resetUser, setResetUser] = useState(null);
