@@ -46,6 +46,14 @@ async function activeUserIds({ role, roles, officeId, excludeIds = [] } = {}) {
   return users.map((u) => u.id).filter((id) => !skip.has(id));
 }
 
+/** Non-admin office users may only act on sessions of their own office. */
+function assertSessionOfficeAccess(user, session) {
+  if (user.role === 'admin') return;
+  if (!user.officeId || session.officeId !== user.officeId) {
+    throw httpError(403, 'Bu ofise ait sipariş üzerinde işlem yapamazsınız');
+  }
+}
+
 async function notifyUsers(userIds, { title, body, event, payload, url, tag } = {}) {
   const unique = [...new Set(userIds.filter(Boolean))];
   if (!unique.length) return;
@@ -487,6 +495,7 @@ export async function leaveSession(user, sessionId, meta = {}) {
 export async function confirmSession(user, sessionId, meta = {}) {
   const session = await prisma.orderSession.findUnique({ where: { id: sessionId } });
   if (!session) throw httpError(404, 'Sipariş oturumu bulunamadı');
+  assertSessionOfficeAccess(user, session);
   if (session.openedById !== user.id && user.role !== 'admin') {
     throw httpError(403, 'Sadece siparişi açan kişi onaylayabilir');
   }
@@ -505,6 +514,7 @@ export async function cancelSession(user, sessionId, meta = {}) {
     include: { openedBy: { select: { id: true, name: true } } },
   });
   if (!session) throw httpError(404, 'Sipariş oturumu bulunamadı');
+  assertSessionOfficeAccess(user, session);
   if (session.openedById !== user.id && user.role !== 'admin') {
     throw httpError(403, 'Sadece siparişi açan kişi oturumu kapatabilir');
   }

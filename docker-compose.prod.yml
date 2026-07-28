@@ -4,13 +4,18 @@ services:
       context: .
       target: api
     ports:
-      - "4000:4000"
+      # Host loopback only — expose via reverse proxy / firewall rules
+      - "127.0.0.1:4000:4000"
     environment:
       NODE_ENV: production
       PORT: 4000
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       DATABASE_URL: file:./data/prod.db
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:?VAPID_PUBLIC_KEY is required}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?VAPID_PRIVATE_KEY is required}
+      VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@localhost}
+      METRICS_TOKEN: ${METRICS_TOKEN:?METRICS_TOKEN is required}
       GIT_COMMIT: ${GIT_COMMIT:-}
       BUILD_DATE: ${BUILD_DATE:-}
     volumes:
@@ -22,7 +27,8 @@ services:
       context: .
       target: web
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+        VITE_API_URL: ${VITE_API_URL:?VITE_API_URL is required}
+        VITE_VAPID_PUBLIC_KEY: ${VITE_VAPID_PUBLIC_KEY:?VITE_VAPID_PUBLIC_KEY is required}
     ports:
       - "80:80"
     depends_on:

@@ -2,7 +2,29 @@ import jwt from 'jsonwebtoken';
 import { prisma } from './db.js';
 import { httpError } from './errors.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'local-dev-secret';
+const WEAK_JWT_SECRETS = new Set([
+  'local-dev-secret',
+  'docker-dev-secret',
+  'change-me-in-production',
+]);
+
+/** Dev/test fallback only — never used when NODE_ENV=production. */
+const DEV_JWT_FALLBACK = 'local-dev-secret';
+
+export function resolveJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (isProd) {
+    if (!secret || WEAK_JWT_SECRETS.has(secret)) {
+      throw new Error('JWT_SECRET production için zorunlu ve güvenli olmalıdır');
+    }
+    return secret;
+  }
+
+  if (!secret) return DEV_JWT_FALLBACK;
+  return secret;
+}
 
 export function signToken(user, { remember = true } = {}) {
   return jwt.sign(
@@ -13,13 +35,13 @@ export function signToken(user, { remember = true } = {}) {
       name: user.name,
       username: user.username,
     },
-    JWT_SECRET,
-    { expiresIn: remember ? '7d' : '1d' }
+    resolveJwtSecret(),
+    { expiresIn: remember ? '7d' : '1d', algorithm: 'HS256' }
   );
 }
 
 export function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET);
+  return jwt.verify(token, resolveJwtSecret(), { algorithms: ['HS256'] });
 }
 
 export async function authMiddleware(req, _res, next) {
@@ -74,3 +96,5 @@ export function clientMeta(req) {
     requestId: req.requestId || null,
   };
 }
+
+export { WEAK_JWT_SECRETS };

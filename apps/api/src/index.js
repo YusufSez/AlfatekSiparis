@@ -6,25 +6,15 @@ import { createSocketServer } from './realtime/socket.js';
 import { restoreSessionTimers } from './modules/orders/orders.domain.js';
 import { logger } from './common/logger.js';
 import { setSocketRuntime } from './common/runtime.js';
+import { assertProductionSecurityConfig } from './common/prodSecurity.js';
 
-const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
+assertProductionSecurityConfig();
+
+const isProd = process.env.NODE_ENV === 'production';
+const corsOrigin =
+  process.env.CORS_ORIGIN || (isProd ? '' : 'http://localhost:5173');
 const port = Number(process.env.PORT || 4000);
 const host = process.env.HOST || '0.0.0.0';
-const jwtSecret = process.env.JWT_SECRET || 'local-dev-secret';
-
-if (process.env.NODE_ENV === 'production') {
-  if (
-    !process.env.JWT_SECRET ||
-    jwtSecret === 'local-dev-secret' ||
-    jwtSecret === 'docker-dev-secret' ||
-    jwtSecret === 'change-me-in-production'
-  ) {
-    logger.error('JWT_SECRET production için zorunlu ve güvenli olmalıdır');
-    process.exit(1);
-  }
-} else if (!process.env.JWT_SECRET) {
-  logger.warn('JWT_SECRET tanımlı değil; local-dev-secret kullanılıyor');
-}
 
 function lanAddresses() {
   const nets = os.networkInterfaces();
@@ -51,7 +41,7 @@ async function start() {
     for (const ip of lanAddresses()) {
       logger.info(`Network http://${ip}:${port}`);
     }
-    if (process.env.NODE_ENV !== 'production') {
+    if (!isProd) {
       logger.info(`Swagger http://localhost:${port}/docs`);
     }
     logger.info(`Metrics http://localhost:${port}/metrics`);

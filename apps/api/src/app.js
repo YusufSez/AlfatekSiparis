@@ -58,7 +58,23 @@ export function createApp(corsOrigin) {
 
   app.use(systemRoutes);
 
-  app.get('/metrics', async (_req, res, next) => {
+  /** Production: require METRICS_TOKEN (Bearer or X-Metrics-Token). Dev/test: open. */
+  function metricsAuth(req, res, next) {
+    if (!isProd) return next();
+    const expected = String(process.env.METRICS_TOKEN || '').trim();
+    if (!expected) {
+      return res.status(503).json({ error: 'METRICS_TOKEN yapılandırılmamış' });
+    }
+    const header = req.get('authorization') || '';
+    const bearer = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+    const provided = bearer || String(req.get('x-metrics-token') || '').trim();
+    if (provided !== expected) {
+      return res.status(401).json({ error: 'Yetkisiz' });
+    }
+    return next();
+  }
+
+  app.get('/metrics', metricsAuth, async (_req, res, next) => {
     try {
       const body = await renderPrometheusMetrics();
       res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');

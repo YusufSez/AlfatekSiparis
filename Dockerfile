@@ -27,7 +27,9 @@ CMD ["sh", "-c", "mkdir -p prisma/data && npx prisma migrate deploy && node src/
 FROM node:22-alpine AS web-build
 WORKDIR /app
 ARG VITE_API_URL=
+ARG VITE_VAPID_PUBLIC_KEY=
 ENV VITE_API_URL=$VITE_API_URL
+ENV VITE_VAPID_PUBLIC_KEY=$VITE_VAPID_PUBLIC_KEY
 COPY package.json package-lock.json ./
 COPY apps/web/package.json ./apps/web/package.json
 RUN npm ci -w apps/web

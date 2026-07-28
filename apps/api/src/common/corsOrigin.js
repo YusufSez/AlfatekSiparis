@@ -30,14 +30,25 @@ function parseConfiguredOrigins(corsOrigin) {
  * @returns {boolean | string[] | function}
  */
 export function buildCorsOriginOption(corsOriginEnv) {
-  const configured = parseConfiguredOrigins(corsOriginEnv || 'http://localhost:5173');
   const isProd = process.env.NODE_ENV === 'production';
+  const configured = parseConfiguredOrigins(
+    corsOriginEnv || (isProd ? '' : 'http://localhost:5173')
+  );
 
   return function corsOriginCheck(origin, callback) {
-    // Same-origin / non-browser tools
+    // Same-origin / non-browser tools (curl, health checks)
     if (!origin) return callback(null, true);
 
-    if (configured.includes('*') || configured.includes(origin)) {
+    // Production: never honor wildcard even if misconfigured in env list
+    if (isProd && configured.includes('*')) {
+      return callback(null, false);
+    }
+
+    if (!isProd && configured.includes('*')) {
+      return callback(null, true);
+    }
+
+    if (configured.includes(origin)) {
       return callback(null, true);
     }
 
