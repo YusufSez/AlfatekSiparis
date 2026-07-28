@@ -42,6 +42,12 @@ export function wantsPushOnThisDevice() {
   return isLikelyMobile() ? prefs.mobile : prefs.desktop;
 }
 
+/** Persist opt-in/out for the current device type (desktop vs mobile). */
+export function setPushPrefForThisDevice(enabled) {
+  const key = isLikelyMobile() ? 'mobile' : 'desktop';
+  return setPushPrefs({ [key]: Boolean(enabled) });
+}
+
 /** Normalize VAPID public key from env/API (strip quotes, CRLF, whitespace). */
 export function normalizeVapidPublicKey(raw) {
   if (raw == null) return '';
@@ -136,7 +142,8 @@ export async function getPushStatus() {
   try {
     const data = await api('/notifications/push/status');
     configured = data.configured;
-    if (data.subscribed) subscribed = true;
+    // This-device UI: only local PushManager subscription counts as subscribed.
+    // Backend may still list other devices — do not force this device "aktif".
     lastSeenAt = data.lastSeenAt || null;
     devices = data.devices || 0;
   } catch {
@@ -150,6 +157,20 @@ export async function getPushStatus() {
     lastSeenAt,
     devices,
   };
+}
+
+function friendlySubscribeError(err) {
+  const raw = String(err?.message || err || '');
+  if (
+    /push service not available/i.test(raw) ||
+    /push service error/i.test(raw) ||
+    /registration failed.*push/i.test(raw) ||
+    err?.name === 'AbortError' ||
+    err?.name === 'NotSupportedError'
+  ) {
+    return 'Bu tarayıcı push bildirimlerini desteklemiyor. Chrome veya Edge ile deneyebilirsiniz.';
+  }
+  return raw || 'Push aboneliği başarısız';
 }
 
 export async function subscribePush() {
@@ -183,7 +204,7 @@ export async function subscribePush() {
         applicationServerKey,
       });
     } catch (err) {
-      throw new Error(err?.message || 'Push aboneliği başarısız');
+      throw new Error(friendlySubscribeError(err));
     }
   }
 
@@ -200,15 +221,25 @@ export async function subscribePush() {
       expirationTime: json.expirationTime ?? null,
     },
   });
+  setPushPrefForThisDevice(true);
   return sub;
 }
 
 export async function unsubscribePush() {
+  // Opt out first so login sync / refresh cannot re-subscribe this device.
+  setPushPrefForThisDevice(false);
+
   if (!isPushSupported()) return;
   const reg = await ensureServiceWorker();
   const sub = await reg?.pushManager?.getSubscription();
   const endpoint = sub?.endpoint;
-  if (sub) await sub.unsubscribe();
+  if (sub) {
+    try {
+      await sub.unsubscribe();
+    } catch {
+      /* ignore */
+    }
+  }
   try {
     await api('/notifications/push/unsubscribe', {
       method: 'DELETE',
@@ -223,14 +254,15 @@ export async function sendTestPush() {
   return api('/notifications/push/test', { method: 'POST', body: {} });
 }
 
-/** Best-effort: subscribe after login if prefs allow */
+/**
+ * After login: restore subscription only if this device still opted in.
+ * Notification.permission === 'granted' alone must not re-subscribe.
+ */
 export async function syncPushAfterLogin() {
   if (!isPushSupported() || !wantsPushOnThisDevice()) return;
-  if (Notification.permission === 'denied') return;
+  if (Notification.permission !== 'granted') return;
   try {
-    if (Notification.permission === 'granted') {
-      await subscribePush();
-    }
+    await subscribePush();
   } catch {
     /* silent — user can enable from profile */
   }

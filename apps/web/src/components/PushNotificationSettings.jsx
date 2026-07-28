@@ -80,13 +80,13 @@ export default function PushNotificationSettings() {
   async function enableHere() {
     setBusy(true);
     try {
-      const key = mobile ? 'mobile' : 'desktop';
-      setPushPrefs({ [key]: true });
+      setPushPrefs({ [mobile ? 'mobile' : 'desktop']: true });
       await subscribePush();
       await refresh();
       toast.success('Push bildirimleri aktif');
     } catch (err) {
       toast.error(err.message || 'Abonelik başarısız');
+      await refresh();
     } finally {
       setBusy(false);
     }
@@ -95,6 +95,7 @@ export default function PushNotificationSettings() {
   async function disableHere() {
     setBusy(true);
     try {
+      setPushPrefs({ [mobile ? 'mobile' : 'desktop']: false });
       await unsubscribePush();
       await refresh();
       toast.success('Abonelik kaldırıldı');
