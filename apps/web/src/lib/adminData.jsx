@@ -23,18 +23,22 @@ export function AdminDataProvider({ children }) {
   const [error, setError] = useState('');
   const [apiMeta, setApiMeta] = useState(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (signal) => {
     const [o, u, m, s, l, p, d, a, k] = await Promise.all([
-      api('/admin/offices'),
-      api('/admin/users'),
-      api('/admin/menu-items'),
-      api('/admin/settings'),
-      api('/admin/logs?take=100'),
-      api('/admin/presence'),
-      api('/admin/dashboard'),
-      api('/announcements'),
-      api('/kitchen/tickets').catch(() => ({ tickets: [] })),
+      api('/admin/offices', { signal }),
+      api('/admin/users', { signal }),
+      api('/admin/menu-items', { signal }),
+      api('/admin/settings', { signal }),
+      api('/admin/logs?take=100', { signal }),
+      api('/admin/presence', { signal }),
+      api('/admin/dashboard', { signal }),
+      api('/announcements', { signal }),
+      api('/kitchen/tickets', { signal }).catch((err) => {
+        if (err?.name === 'AbortError') throw err;
+        return { tickets: [] };
+      }),
     ]);
+    if (signal?.aborted) return;
     setOffices(o.offices);
     setUsers(u.users);
     setMenu(m.items);
@@ -53,9 +57,16 @@ export function AdminDataProvider({ children }) {
   }, []);
 
   useEffect(() => {
-    refresh()
-      .catch((e) => setError(e.message))
-      .finally(() => setBooting(false));
+    const ac = new AbortController();
+    refresh(ac.signal)
+      .catch((e) => {
+        if (e?.name === 'AbortError' || ac.signal.aborted) return;
+        setError(e.message);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setBooting(false);
+      });
+    return () => ac.abort();
   }, [reconnectKey, refresh]);
 
   useEffect(() => {

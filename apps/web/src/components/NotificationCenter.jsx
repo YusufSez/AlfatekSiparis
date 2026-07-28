@@ -17,20 +17,23 @@ export default function NotificationCenter() {
   const [coords, setCoords] = useState(null);
   const role = user?.role;
 
-  async function load() {
+  async function load(signal) {
     try {
-      const data = await api('/notifications');
+      const data = await api('/notifications', { signal });
+      if (signal?.aborted) return;
       setItems(
         (data.notifications || []).filter((n) => isNotificationEventAllowed(role, n.event))
       );
-    } catch {
+    } catch (err) {
+      if (err?.name === 'AbortError' || signal?.aborted) return;
       /* ignore */
     }
   }
 
   useEffect(() => {
-    load();
-    return on('notification:new', (n) => {
+    const ac = new AbortController();
+    load(ac.signal);
+    const off = on('notification:new', (n) => {
       if (!isNotificationEventAllowed(role, n.event)) return;
 
       // Special in-app sound is independent of inbox / OS toast / push.
@@ -49,7 +52,10 @@ export default function NotificationCenter() {
         }
         return [
           {
-            id: `live-${Date.now()}`,
+            id:
+              typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? `live-${crypto.randomUUID()}`
+                : `live-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
             _dedupeKey: key,
             title: n.title,
             body: n.body,
@@ -62,6 +68,10 @@ export default function NotificationCenter() {
         ];
       });
     });
+    return () => {
+      ac.abort();
+      off();
+    };
   }, [on, role, user?.id]);
 
   useLayoutEffect(() => {
@@ -118,8 +128,12 @@ export default function NotificationCenter() {
   }, [open]);
 
   async function markAll() {
-    await api('/notifications/read-all', { method: 'POST', body: {} });
-    load();
+    try {
+      await api('/notifications/read-all', { method: 'POST', body: {} });
+      load();
+    } catch {
+      /* ignore */
+    }
   }
 
   const unread = items.filter((i) => !i.readAt).length;

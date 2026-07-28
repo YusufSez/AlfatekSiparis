@@ -56,12 +56,18 @@ function throwFriendly(errorLike) {
   throw err;
 }
 
+function isAuthCredentialRequest(path) {
+  const p = String(path || '').split('?')[0];
+  return p === '/auth/login' || p.endsWith('/auth/login');
+}
+
 export async function api(path, options = {}) {
   const isFormData =
     typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const { signal, ...rest } = options;
   const headers = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-    ...(options.headers || {}),
+    ...(rest.headers || {}),
   };
   const token = getToken();
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -70,15 +76,19 @@ export async function api(path, options = {}) {
   let res;
   try {
     res = await fetch(`${base}${path}`, {
-      ...options,
+      ...rest,
+      signal,
       headers,
       body: isFormData
-        ? options.body
-        : options.body
-          ? JSON.stringify(options.body)
+        ? rest.body
+        : rest.body
+          ? JSON.stringify(rest.body)
           : undefined,
     });
   } catch (networkErr) {
+    if (signal?.aborted || networkErr?.name === 'AbortError') {
+      throw networkErr;
+    }
     if (import.meta.env.DEV) {
       console.warn('[api] network error', path, networkErr);
     }
@@ -93,7 +103,9 @@ export async function api(path, options = {}) {
   }
 
   if (!res.ok) {
-    if (res.status === 401) {
+    // Login 401 = bad credentials — never wipe another tab's valid session.
+    // Only expire when an authenticated request is rejected.
+    if (res.status === 401 && !isAuthCredentialRequest(path)) {
       clearAuthStorage();
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('auth:expired'));

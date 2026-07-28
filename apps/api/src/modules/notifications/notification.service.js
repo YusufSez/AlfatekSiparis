@@ -19,9 +19,17 @@ export class SocketAdapter {
       this.io.emit(event, payload);
       return;
     }
-    for (const room of rooms) {
-      this.io.to(room).emit(event, payload);
-    }
+    // Dedupe rooms so sockets in multiple rooms (e.g. admin in kitchen+admins)
+    // receive each event once. Socket.IO union emit delivers at most once per socket.
+    const unique = [...new Set((rooms || []).filter(Boolean))];
+    if (!unique.length) return;
+    this.io.to(unique).emit(event, payload);
+  }
+
+  /** Force-disconnect all sockets for a user (delete / deactivate). */
+  disconnectUser(userId) {
+    if (!this.io || !userId) return;
+    this.io.in(`user:${userId}`).disconnectSockets(true);
   }
 }
 
@@ -71,6 +79,11 @@ export class NotificationService {
 
   sendPushToAll(note) {
     return sendPushToAll(note);
+  }
+
+  disconnectUser(userId) {
+    const socket = this.adapters.find((a) => a instanceof SocketAdapter);
+    socket?.disconnectUser(userId);
   }
 }
 

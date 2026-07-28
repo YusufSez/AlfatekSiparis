@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { authMiddleware, clientMeta, requireRoles } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
+import { safeJsonParse } from '../../common/safeJson.js';
 import {
   cancelSession,
   callKitchenStaff,
@@ -173,7 +174,7 @@ router.get('/:id/events', requireRoles('office_user', 'admin'), async (req, res,
         id: e.id,
         type: e.type,
         actor: e.actor,
-        payload: JSON.parse(e.payload),
+        payload: safeJsonParse(e.payload, {}),
         requestId: e.requestId,
         createdAt: e.createdAt,
       })),

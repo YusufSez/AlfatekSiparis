@@ -6,6 +6,7 @@ import { httpError } from '../../common/errors.js';
 import { logger } from '../../common/logger.js';
 import { notificationService } from './notification.service.js';
 import { isNotificationEventAllowed } from './notificationAudience.js';
+import { safeJsonParse } from '../../common/safeJson.js';
 import {
   deletePushSubscription,
   getVapidPublicKey,
@@ -64,7 +65,7 @@ router.get('/', async (req, res, next) => {
         title: n.title,
         body: n.body,
         event: n.event,
-        payload: JSON.parse(n.payload),
+        payload: safeJsonParse(n.payload, {}),
         readAt: n.readAt,
         createdAt: n.createdAt,
       }));
@@ -194,7 +195,7 @@ router.get('/admin/sessions/:id/events', requireRoles('admin'), async (req, res,
         id: e.id,
         type: e.type,
         actor: e.actor,
-        payload: JSON.parse(e.payload),
+        payload: safeJsonParse(e.payload, {}),
         requestId: e.requestId,
         createdAt: e.createdAt,
       })),

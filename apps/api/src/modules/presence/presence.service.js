@@ -1,3 +1,7 @@
+/**
+ * In-memory presence for a single Node process (single VPS).
+ * Multi-instance would need a shared store (Redis) — not used in current deploy.
+ */
 export class MemoryPresenceProvider {
   constructor() {
     /** @type {Map<string, Map<string, { id: string, name: string, socketIds: Set<string> }>>} */

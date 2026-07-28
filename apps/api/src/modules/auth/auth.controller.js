@@ -212,7 +212,10 @@ router.post('/password', authMiddleware, async (req, res, next) => {
 
     await prisma.user.update({
       where: { id: req.user.id },
-      data: { passwordHash: await bcrypt.hash(parsed.data.newPassword, 10) },
+      data: {
+        passwordHash: await bcrypt.hash(parsed.data.newPassword, 10),
+        tokenVersion: { increment: 1 },
+      },
     });
     await writeAudit(req.user.id, 'auth.password_change', {}, clientMeta(req));
     res.json({ ok: true });

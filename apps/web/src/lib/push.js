@@ -225,9 +225,11 @@ export async function subscribePush() {
   return sub;
 }
 
-export async function unsubscribePush() {
-  // Opt out first so login sync / refresh cannot re-subscribe this device.
-  setPushPrefForThisDevice(false);
+export async function unsubscribePush({ clearPref = true } = {}) {
+  // clearPref only when the user opts out in settings — never on logout.
+  if (clearPref) {
+    setPushPrefForThisDevice(false);
+  }
 
   if (!isPushSupported()) return;
   const reg = await ensureServiceWorker();

@@ -403,7 +403,27 @@ export default function OfficePage() {
   const [shortageAlert, setShortageAlert] = useState(null);
   const specialSaveTimer = useRef(null);
   const specialDirty = useRef(false);
+  /** Per menuItemId: coalesce rapid taps, serialize POSTs, always apply latest qty. */
+  const lineQueuesRef = useRef(new Map());
+  const timersRef = useRef(new Set());
   const { label, urgent, remaining } = useCountdown(session?.endsAt);
+
+  function scheduleTimeout(fn, ms) {
+    const id = setTimeout(() => {
+      timersRef.current.delete(id);
+      fn();
+    }, ms);
+    timersRef.current.add(id);
+    return id;
+  }
+
+  useEffect(() => {
+    return () => {
+      for (const id of timersRef.current) clearTimeout(id);
+      timersRef.current.clear();
+      if (specialSaveTimer.current) clearTimeout(specialSaveTimer.current);
+    };
+  }, []);
 
   useEffect(() => {
     clearLegacyOrderHistoryKeys();
@@ -428,10 +448,8 @@ export default function OfficePage() {
       })
       .catch((err) => {
         if (cancelled) return;
-        console.log('[order-history] API failed — not showing unverified cache', err?.message);
-        setOrderHistory([]);
-        saveCachedOrderHistory(user.id, user.officeId, []);
-        console.log('[order-history] source=state empty (API error)');
+        // Keep existing local cache / state — do not wipe on transient API failure
+        console.log('[order-history] API failed — keeping cache', err?.message);
       });
 
     return () => {
@@ -481,18 +499,20 @@ export default function OfficePage() {
     });
   }, [orderHistory, lastSentOrder]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal) => {
     const [active, menuRes, presenceRes] = await Promise.all([
-      api('/sessions/active'),
-      api('/menu'),
-      api('/sessions/presence'),
+      api('/sessions/active', { signal }),
+      api('/menu', { signal }),
+      api('/sessions/presence', { signal }),
     ]);
+    if (signal?.aborted) return;
     setSession(active.session);
     setMenu(menuRes.items);
     setPresence(presenceRes.users || active.session?.presence || []);
     if (active.session) {
       setOrderPhase('collecting');
-      const ev = await api(`/sessions/${active.session.id}/events`);
+      const ev = await api(`/sessions/${active.session.id}/events`, { signal });
+      if (signal?.aborted) return;
       setEvents(ev.events);
     } else {
       setEvents([]);
@@ -502,23 +522,23 @@ export default function OfficePage() {
   }, []);
 
   useEffect(() => {
-    load()
-      .catch((e) => setError(e.message))
-      .finally(() => setBooting(false));
+    const ac = new AbortController();
+    load(ac.signal)
+      .catch((e) => {
+        if (e?.name === 'AbortError' || ac.signal.aborted) return;
+        setError(e.message);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setBooting(false);
+      });
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission().catch(() => {});
     }
+    return () => ac.abort();
   }, [load, reconnectKey]);
 
-  useEffect(() => {
-    if (!session || remaining > 0) return;
-    rememberSentOrder(session);
-    setOrderPhase('dispatching');
-    const t = setTimeout(() => {
-      setOrderPhase((p) => (p === 'dispatching' ? 'collected' : p));
-    }, 1800);
-    return () => clearTimeout(t);
-  }, [session, remaining, rememberSentOrder]);
+  // Countdown hitting 0 must NOT fake "dispatching" — wait for session:sent / session:closed.
+  // While session is still collecting, timer shows "Kapanıyor" (remaining === 0).
 
   useEffect(() => {
     const offs = [
@@ -540,23 +560,25 @@ export default function OfficePage() {
         rememberSentOrder(payload);
         setSession(null);
         setOrderPhase('dispatching');
-        setTimeout(() => setOrderPhase((p) => (p === 'dispatching' ? 'collected' : p)), 1600);
+        scheduleTimeout(() => setOrderPhase((p) => (p === 'dispatching' ? 'collected' : p)), 1600);
       }),
-      on('session:closed', (payload) => {
+      on('session:closed', () => {
         setSession(null);
         setOrderPhase(null);
         setLastSentOrder(null);
       }),
       on('presence:update', (payload) => {
-        if (payload.officeId === user.officeId) setPresence(payload.users);
+        if (payload?.officeId && payload.officeId === user.officeId) {
+          setPresence(payload.users || []);
+        }
       }),
       on('kitchen:updated', (ticket) => {
-        if (ticket.officeId !== user.officeId) return;
+        if (!ticket?.officeId || ticket.officeId !== user.officeId) return;
         if (ticket.status === 'preparing') {
           setOrderPhase('preparing');
         } else if (ticket.status === 'delivered') {
           setOrderPhase('delivered');
-          setTimeout(() => {
+          scheduleTimeout(() => {
             setOrderPhase((p) => (p === 'delivered' ? null : p));
             setLastSentOrder(null);
           }, 8000);
@@ -586,15 +608,19 @@ export default function OfficePage() {
 
   useEffect(() => {
     if (!session?.id) return;
-    api(`/sessions/${session.id}/events`)
-      .then((ev) => setEvents(ev.events))
+    const ac = new AbortController();
+    api(`/sessions/${session.id}/events`, { signal: ac.signal })
+      .then((ev) => {
+        if (!ac.signal.aborted) setEvents(ev.events);
+      })
       .catch(() => {});
+    return () => ac.abort();
   }, [session?.id, session?.lines?.length, session?.skippedUsers?.length, session?.status]);
 
   const myQty = useMemo(() => {
     const map = {};
     if (!session) return map;
-    for (const line of session.lines) {
+    for (const line of session.lines || []) {
       if (line.userId === user.id) map[line.menuItemId] = { qty: line.qty, note: line.note };
     }
     return map;
@@ -656,12 +682,6 @@ export default function OfficePage() {
     setSpecialDraft(mine?.note || '');
   }, [session, user?.id]);
 
-  useEffect(() => {
-    return () => {
-      if (specialSaveTimer.current) clearTimeout(specialSaveTimer.current);
-    };
-  }, []);
-
   const timelineEvents = useMemo(() => groupTimelineEvents(events), [events]);
 
   const menuIconById = useMemo(() => {
@@ -689,17 +709,32 @@ export default function OfficePage() {
   async function setQty(menuItemId, qty, note = null) {
     if (!session) return;
     setError('');
-    try {
-      const body = { menuItemId, qty };
-      if (note != null) body.note = note;
-      const data = await api(`/sessions/${session.id}/lines`, {
-        method: 'POST',
-        body,
-      });
-      setSession(data.session);
-    } catch (err) {
-      setError(err.message);
+    const sessionId = session.id;
+    let q = lineQueuesRef.current.get(menuItemId);
+    if (!q) {
+      q = { latest: null, chain: Promise.resolve() };
+      lineQueuesRef.current.set(menuItemId, q);
     }
+    q.latest = { qty, note, sessionId };
+    q.chain = q.chain.then(async () => {
+      while (q.latest) {
+        const job = q.latest;
+        q.latest = null;
+        const body = { menuItemId, qty: job.qty };
+        if (job.note != null) body.note = job.note;
+        try {
+          const data = await api(`/sessions/${job.sessionId}/lines`, {
+            method: 'POST',
+            body,
+          });
+          setSession(data.session);
+        } catch (err) {
+          if (err?.name === 'AbortError') return;
+          setError(err.message);
+        }
+      }
+    });
+    await q.chain;
   }
 
   async function saveSpecialRequest(note) {
@@ -848,7 +883,7 @@ export default function OfficePage() {
       if (receipt) rememberSentOrder(receipt);
       setSession(null);
       setOrderPhase('dispatching');
-      setTimeout(() => setOrderPhase((p) => (p === 'dispatching' ? 'collected' : p)), 1600);
+      scheduleTimeout(() => setOrderPhase((p) => (p === 'dispatching' ? 'collected' : p)), 1600);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1315,7 +1350,7 @@ export default function OfficePage() {
                     </div>
                   )}
                   <div className="detail-lines">
-                    {session.lines.map((l) => (
+                    {(session.lines || []).map((l) => (
                       <span key={l.id} className="chip">
                         {l.user.name}: {l.qty}× {l.menuItem.name}
                         {l.note ? ` — ${l.note}` : ''}

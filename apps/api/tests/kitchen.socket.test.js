@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, it, expect } from 'vitest';
 import request from 'supertest';
 import http from 'http';
 import { io as ioClient } from 'socket.io-client';
-import { getApp, resetDb, loginAs, authHeader } from './helpers.js';
+import { getApp, resetDb, loginAs, authHeader, prisma } from './helpers.js';
 import { createSocketServer } from '../src/realtime/socket.js';
 import { setSocketRuntime } from '../src/common/runtime.js';
 
@@ -99,4 +99,51 @@ describe('KITCHEN + SOCKET', () => {
     kitchenSocket.close();
   });
 
+  it('unavailable kısa sürede ikinci kez bildirim üretmez', async () => {
+    const officeLogin = await loginAs(request(app), 'yusuf');
+    const kitchenLogin = await loginAs(request(app), 'mutfak');
+    const officeToken = officeLogin.body.token;
+    const kitchenToken = kitchenLogin.body.token;
+
+    const opened = await request(app).post('/sessions').set(authHeader(officeToken)).send({});
+    const sid = opened.body.session.id;
+    await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(officeToken))
+      .send({ menuItemId: fixtures.tea.id, qty: 2 });
+    await request(app).post(`/sessions/${sid}/confirm`).set(authHeader(officeToken)).send({});
+
+    const tickets = await request(app)
+      .get('/kitchen/tickets')
+      .set(authHeader(kitchenToken));
+    const ticketId = tickets.body.tickets[0].id;
+    const body = {
+      items: [{ menuItemId: fixtures.tea.id, name: 'Çay' }],
+      note: null,
+    };
+
+    const first = await request(app)
+      .post(`/kitchen/tickets/${ticketId}/unavailable`)
+      .set(authHeader(kitchenToken))
+      .send(body);
+    expect(first.status).toBe(200);
+    expect(first.body.report?.deduped).not.toBe(true);
+
+    const afterFirst = await prisma.userNotification.count({
+      where: { event: 'ticket.unavailable' },
+    });
+    expect(afterFirst).toBeGreaterThan(0);
+
+    const second = await request(app)
+      .post(`/kitchen/tickets/${ticketId}/unavailable`)
+      .set(authHeader(kitchenToken))
+      .send(body);
+    expect(second.status).toBe(200);
+    expect(second.body.report?.deduped).toBe(true);
+
+    const afterSecond = await prisma.userNotification.count({
+      where: { event: 'ticket.unavailable' },
+    });
+    expect(afterSecond).toBe(afterFirst);
+  });
 });

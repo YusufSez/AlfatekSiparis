@@ -47,6 +47,8 @@ model User {
   officeId     String?
   avatarUrl    String?
   active       Boolean   @default(true)
+  /** Bumped on password change — invalidates JWTs that carry an older tv claim. */
+  tokenVersion Int       @default(0)
   deletedAt    DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

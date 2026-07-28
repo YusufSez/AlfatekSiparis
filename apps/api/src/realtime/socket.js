@@ -26,6 +26,7 @@ export function createSocketServer(httpServer, corsOrigin) {
       const payload = verifyToken(token);
       const user = await prisma.user.findUnique({ where: { id: payload.sub } });
       if (!user || !user.active || user.deletedAt) return next(new Error('Yetkisiz'));
+      if ((payload.tv ?? 0) !== (user.tokenVersion ?? 0)) return next(new Error('Yetkisiz'));
       socket.user = user;
       next();
     } catch {

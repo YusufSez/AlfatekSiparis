@@ -50,6 +50,18 @@ describe('NOTIFICATION', () => {
       event: 'kitchen:updated',
       payload: { id: 1 },
     });
-    expect(to).toHaveBeenCalledWith('kitchen');
+    expect(to).toHaveBeenCalledWith(['kitchen']);
+
+    to.mockClear();
+    emit.mockClear();
+    await adapter.send({
+      rooms: ['kitchen', 'admins', 'kitchen'],
+      event: 'kitchen:new_ticket',
+      payload: { id: 2 },
+    });
+    // Union emit once — admin in both rooms receives a single delivery
+    expect(to).toHaveBeenCalledTimes(1);
+    expect(to).toHaveBeenCalledWith(['kitchen', 'admins']);
+    expect(emit).toHaveBeenCalledWith('kitchen:new_ticket', { id: 2 });
   });
 });

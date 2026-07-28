@@ -153,26 +153,96 @@ export default function KitchenPage() {
   const [shortageNote, setShortageNote] = useState('');
   const [shortageBusy, setShortageBusy] = useState(false);
   const inFlightRef = useRef(new Set());
+  /** Latest kitchen:updated received while a ticket PATCH was in flight */
+  const pendingSocketRef = useRef(new Map());
   const ticketsRef = useRef([]);
   const undoToastRef = useRef(null);
+  const timersRef = useRef(new Set());
+
+  function scheduleTimeout(fn, ms) {
+    const id = setTimeout(() => {
+      timersRef.current.delete(id);
+      fn();
+    }, ms);
+    timersRef.current.add(id);
+    return id;
+  }
+
+  useEffect(() => {
+    return () => {
+      for (const id of timersRef.current) clearTimeout(id);
+      timersRef.current.clear();
+    };
+  }, []);
 
   useEffect(() => {
     ticketsRef.current = tickets;
   }, [tickets]);
 
-  const load = useCallback(async () => {
+  const applyTicketUpdate = useCallback((ticket) => {
+    if (!ticket?.id) return;
+    if (ticket.status === 'delivered') {
+      setLeaving((m) => ({ ...m, [ticket.id]: true }));
+      scheduleTimeout(() => {
+        setTickets((prev) => prev.filter((t) => t.id !== ticket.id));
+        setHistory((prev) => [ticket, ...prev.filter((t) => t.id !== ticket.id)].slice(0, 20));
+        setLeaving((m) => {
+          const next = { ...m };
+          delete next[ticket.id];
+          return next;
+        });
+      }, 420);
+      return;
+    }
+
+    setTickets((prev) => {
+      const exists = prev.some((t) => t.id === ticket.id);
+      if (!exists) {
+        setHistory((h) => h.filter((t) => t.id !== ticket.id));
+        return [ticket, ...prev];
+      }
+      const current = prev.find((t) => t.id === ticket.id);
+      if (
+        current &&
+        ticket.status !== 'preparing' &&
+        (STATUS_RANK[ticket.status] ?? -1) < (STATUS_RANK[current.status] ?? -1)
+      ) {
+        return prev;
+      }
+      return prev.map((t) => (t.id === ticket.id ? ticket : t));
+    });
+  }, []);
+
+  function releaseInFlight(ticketId) {
+    inFlightRef.current.delete(ticketId);
+    const pending = pendingSocketRef.current.get(ticketId);
+    if (pending) {
+      pendingSocketRef.current.delete(ticketId);
+      applyTicketUpdate(pending);
+    }
+  }
+
+  const load = useCallback(async (signal) => {
     const [data, hist] = await Promise.all([
-      api('/kitchen/tickets'),
-      api('/kitchen/tickets?status=delivered&take=20'),
+      api('/kitchen/tickets', { signal }),
+      api('/kitchen/tickets?status=delivered&take=20', { signal }),
     ]);
+    if (signal?.aborted) return;
     setTickets(data.tickets);
     setHistory(hist.tickets || []);
   }, []);
 
   useEffect(() => {
-    load()
-      .catch((e) => setError(e.message))
-      .finally(() => setBooting(false));
+    const ac = new AbortController();
+    load(ac.signal)
+      .catch((e) => {
+        if (e?.name === 'AbortError' || ac.signal.aborted) return;
+        setError(e.message);
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setBooting(false);
+      });
+    return () => ac.abort();
   }, [load, reconnectKey]);
 
   useEffect(() => {
@@ -184,51 +254,24 @@ export default function KitchenPage() {
       // Special order sound + OS toast → notification:new (playSound)
       if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
     });
-    const offStaffCall = on('kitchen:staff_call', (payload) => {
-      const office = payload?.officeName || 'Ofis';
-      toast.info(`${office} sizi bekliyor.`);
+    // Board sync only — inbox/OS toast already via notification:new (avoid double toast)
+    const offStaffCall = on('kitchen:staff_call', () => {
       if (navigator.vibrate) navigator.vibrate([100, 40, 100]);
     });
     const offUpd = on('kitchen:updated', (ticket) => {
-      if (inFlightRef.current.has(ticket.id)) return;
-
-      if (ticket.status === 'delivered') {
-        setLeaving((m) => ({ ...m, [ticket.id]: true }));
-        setTimeout(() => {
-          setTickets((prev) => prev.filter((t) => t.id !== ticket.id));
-          setHistory((prev) => [ticket, ...prev.filter((t) => t.id !== ticket.id)].slice(0, 20));
-          setLeaving((m) => {
-            const next = { ...m };
-            delete next[ticket.id];
-            return next;
-          });
-        }, 420);
+      if (!ticket?.id) return;
+      if (inFlightRef.current.has(ticket.id)) {
+        pendingSocketRef.current.set(ticket.id, ticket);
         return;
       }
-
-      setTickets((prev) => {
-        const exists = prev.some((t) => t.id === ticket.id);
-        if (!exists) {
-          setHistory((h) => h.filter((t) => t.id !== ticket.id));
-          return [ticket, ...prev];
-        }
-        const current = prev.find((t) => t.id === ticket.id);
-        if (
-          current &&
-          ticket.status !== 'preparing' &&
-          (STATUS_RANK[ticket.status] ?? -1) < (STATUS_RANK[current.status] ?? -1)
-        ) {
-          return prev;
-        }
-        return prev.map((t) => (t.id === ticket.id ? ticket : t));
-      });
+      applyTicketUpdate(ticket);
     });
     return () => {
       offNew();
       offStaffCall();
       offUpd();
     };
-  }, [on, toast]);
+  }, [on, applyTicketUpdate]);
 
   async function undoDeliver(ticket) {
     if (!ticket?.id || inFlightRef.current.has(ticket.id)) return;
@@ -252,7 +295,7 @@ export default function KitchenPage() {
       setError(err.message);
       toast.error(err.message || 'Geri alma başarısız');
     } finally {
-      inFlightRef.current.delete(ticket.id);
+      releaseInFlight(ticket.id);
       setBusyId(null);
     }
   }
@@ -286,7 +329,7 @@ export default function KitchenPage() {
       if (data.ticket.status === 'delivered') {
         setFlashOk(id);
         setLeaving((m) => ({ ...m, [id]: true }));
-        setTimeout(() => {
+        scheduleTimeout(() => {
           setTickets((prev) => prev.filter((t) => t.id !== id));
           setHistory((prev) => [data.ticket, ...prev.filter((t) => t.id !== id)].slice(0, 20));
           setLeaving((m) => {
@@ -311,7 +354,7 @@ export default function KitchenPage() {
     } catch (err) {
       setError(err.message);
     } finally {
-      inFlightRef.current.delete(id);
+      releaseInFlight(id);
       setBusyId(null);
     }
   }

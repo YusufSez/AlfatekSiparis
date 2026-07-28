@@ -4,6 +4,7 @@ import { assertTransition } from '../../common/stateMachine.js';
 import { SessionEventType, SocketEvents } from '../../common/sessionEventType.js';
 import { logger } from '../../common/logger.js';
 import { parseTicketSummaryJson } from '../../common/ticketSummary.js';
+import { safeJsonParse } from '../../common/safeJson.js';
 import { isNotificationEventAllowed } from '../notifications/notificationAudience.js';
 import { notificationService } from '../notifications/notification.service.js';
 import { presenceService } from '../presence/presence.service.js';
@@ -211,7 +212,7 @@ export function serializeTicket(ticket) {
   const { summary, specialRequests } = parseTicketSummaryJson(ticket.summaryJson);
   let details = [];
   try {
-    const raw = JSON.parse(ticket.detailsJson || '[]');
+    const raw = safeJsonParse(ticket.detailsJson || '[]', []);
     details = Array.isArray(raw) ? raw : [];
   } catch {
     details = [];
@@ -275,6 +276,12 @@ function buildTicketPayload(session) {
 
 const pendingTimers = new Map();
 
+/**
+ * Session expiry timers are process-local (single VPS / single Node process).
+ * On restart, restoreSessionTimers() re-hydrates from DB. Multi-instance deploy
+ * would require a shared scheduler — out of scope for current architecture.
+ */
+
 function clearSessionTimer(sessionId) {
   const t = pendingTimers.get(sessionId);
   if (t) {
@@ -286,13 +293,20 @@ function clearSessionTimer(sessionId) {
 export function scheduleSessionExpiry(sessionId, endsAt) {
   clearSessionTimer(sessionId);
   const ms = new Date(endsAt).getTime() - Date.now();
+  const run = () => {
+    finalizeSession(sessionId, 'timeout').catch((err) => {
+      logger.error('session.expiry_finalize_failed', {
+        sessionId,
+        message: err?.message || String(err),
+        stack: err?.stack,
+      });
+    });
+  };
   if (ms <= 0) {
-    void finalizeSession(sessionId, 'timeout');
+    run();
     return;
   }
-  const timer = setTimeout(() => {
-    void finalizeSession(sessionId, 'timeout');
-  }, ms + 50);
+  const timer = setTimeout(run, ms + 50);
   pendingTimers.set(sessionId, timer);
 }
 
@@ -310,7 +324,7 @@ export async function getSettings() {
     autoClose: s?.autoClose ?? true,
     workingHoursStart: s?.workingHoursStart ?? '08:00',
     workingHoursEnd: s?.workingHoursEnd ?? '19:00',
-    config: JSON.parse(s?.config || '{}'),
+    config: safeJsonParse(s?.config || '{}', {}) || {},
   };
 }
 
@@ -333,7 +347,6 @@ export async function openSession(user, meta = {}) {
           include: sessionInclude(),
         });
         const err = httpError(409, 'Bu ofiste zaten aktif bir sipariş var');
-        // Serialize after commit — only attach raw session; caller hydrates
         err._rawSession = existing;
         throw err;
       }
@@ -348,10 +361,21 @@ export async function openSession(user, meta = {}) {
         include: sessionInclude(),
       });
 
-      await tx.office.update({
-        where: { id: user.officeId },
+      // Atomic claim — only one concurrent opener wins even if both passed the null check
+      const claimed = await tx.office.updateMany({
+        where: { id: user.officeId, activeCollectingSessionId: null },
         data: { activeCollectingSessionId: created.id },
       });
+      if (claimed.count === 0) {
+        await tx.orderSession.delete({ where: { id: created.id } });
+        const existing = await tx.orderSession.findFirst({
+          where: { officeId: user.officeId, status: 'collecting' },
+          include: sessionInclude(),
+        });
+        const err = httpError(409, 'Bu ofiste zaten aktif bir sipariş var');
+        err._rawSession = existing;
+        throw err;
+      }
 
       return created;
     });
@@ -700,92 +724,58 @@ async function claimCollectingSession(tx, sessionId, nextStatus) {
 export async function finalizeSession(sessionId, reason, actorId = null, meta = {}) {
   clearSessionTimer(sessionId);
 
-  const session = await prisma.orderSession.findUnique({
+  const peek = await prisma.orderSession.findUnique({
     where: { id: sessionId },
-    include: sessionInclude(),
+    select: { id: true, status: true, officeId: true },
   });
-  if (!session || session.status !== 'collecting') return null;
+  if (!peek || peek.status !== 'collecting') return null;
 
   const settings = await getSettings();
-  const hasLines = session.lines.some((l) => l.qty > 0);
 
-  if (!hasLines) {
-    assertTransition('session', 'collecting', 'closed');
-    const closed = await prisma.$transaction(async (tx) => {
+  const outcome = await prisma.$transaction(async (tx) => {
+    // Fresh load inside the claim transaction — never use a pre-claim snapshot for ticket body
+    const live = await tx.orderSession.findUnique({
+      where: { id: sessionId },
+      include: sessionInclude(),
+    });
+    if (!live || live.status !== 'collecting') return null;
+
+    const hasLines = live.lines.some((l) => l.qty > 0);
+    const closeWithoutKitchen =
+      !hasLines || (reason === 'timeout' && !settings.autoClose);
+
+    if (closeWithoutKitchen) {
+      assertTransition('session', 'collecting', 'closed');
       const updated = await claimCollectingSession(tx, sessionId, 'closed');
       if (!updated) return null;
       await tx.office.update({
-        where: { id: session.officeId },
+        where: { id: live.officeId },
         data: { activeCollectingSessionId: null },
       });
-      return updated;
-    });
-    if (!closed) return null;
-    await writeEvent(sessionId, SessionEventType.CLOSED, actorId, { reason }, meta.requestId);
-    await writeAudit(actorId, SessionEventType.CLOSED, { sessionId, reason }, meta);
-    const payload = await serializeSession(closed);
-    await notificationService.notify({
-      rooms: [`office:${session.officeId}`],
-      event: SocketEvents.SESSION_CLOSED,
-      payload,
-      requestId: meta.requestId,
-    });
-    await notificationService.notify({
-      rooms: [`office:${session.officeId}`],
-      event: SocketEvents.SESSION_UPDATED,
-      payload: null,
-      requestId: meta.requestId,
-    });
-    return payload;
-  }
+      return {
+        kind: 'closed',
+        officeId: live.officeId,
+        updated,
+        hasLines,
+      };
+    }
 
-  // Süre doldu ve autoClose kapalıysa mutfağa gönderme; oturumu kapat
-  if (reason === 'timeout' && !settings.autoClose) {
-    assertTransition('session', 'collecting', 'closed');
-    const closed = await prisma.$transaction(async (tx) => {
-      const updated = await claimCollectingSession(tx, sessionId, 'closed');
-      if (!updated) return null;
-      await tx.office.update({
-        where: { id: session.officeId },
-        data: { activeCollectingSessionId: null },
-      });
-      return updated;
-    });
-    if (!closed) return null;
-    await writeEvent(
-      sessionId,
-      SessionEventType.CLOSED,
-      actorId,
-      { reason, autoClose: false },
-      meta.requestId
-    );
-    await writeAudit(actorId, SessionEventType.CLOSED, { sessionId, reason, autoClose: false }, meta);
-    const payload = await serializeSession(closed);
-    await notificationService.notify({
-      rooms: [`office:${session.officeId}`],
-      event: SocketEvents.SESSION_CLOSED,
-      payload,
-      requestId: meta.requestId,
-    });
-    await notificationService.notify({
-      rooms: [`office:${session.officeId}`],
-      event: SocketEvents.SESSION_UPDATED,
-      payload: null,
-      requestId: meta.requestId,
-    });
-    return payload;
-  }
+    assertTransition('session', 'collecting', 'sent');
+    const claimed = await claimCollectingSession(tx, sessionId, 'sent');
+    if (!claimed) return null;
 
-  assertTransition('session', 'collecting', 'sent');
-  const { summary, details, specialRequests } = buildTicketPayload(session);
+    // Re-read after claim so late lines / special requests land on the ticket
+    const fresh = await tx.orderSession.findUnique({
+      where: { id: sessionId },
+      include: sessionInclude(),
+    });
+    if (!fresh) return null;
 
-  const result = await prisma.$transaction(async (tx) => {
-    const updated = await claimCollectingSession(tx, sessionId, 'sent');
-    if (!updated) return null;
+    const { summary, details, specialRequests } = buildTicketPayload(fresh);
     const ticket = await tx.kitchenTicket.create({
       data: {
         sessionId,
-        officeId: session.officeId,
+        officeId: fresh.officeId,
         status: 'new',
         summaryJson: JSON.stringify({ items: summary, specialRequests }),
         detailsJson: JSON.stringify(details),
@@ -793,27 +783,67 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
       include: { office: true },
     });
     await tx.office.update({
-      where: { id: session.officeId },
+      where: { id: fresh.officeId },
       data: { activeCollectingSessionId: null },
     });
-    return { updated, ticket };
+    return {
+      kind: 'sent',
+      officeId: fresh.officeId,
+      officeName: fresh.office?.name || ticket.office?.name,
+      openedById: fresh.openedById,
+      updated: fresh,
+      ticket,
+      summary,
+    };
   });
-  if (!result) return null;
 
-  await writeEvent(sessionId, SessionEventType.SENT, actorId ?? session.openedById, { reason, summary }, meta.requestId);
-  await writeAudit(actorId ?? session.openedById, SessionEventType.SENT, { sessionId, reason, summary }, meta);
+  if (!outcome) return null;
 
-  const sessionPayload = await serializeSession(result.updated);
-  const ticketPayload = serializeTicket(result.ticket);
+  if (outcome.kind === 'closed') {
+    const closedPayload =
+      reason === 'timeout' && outcome.hasLines && !settings.autoClose
+        ? { reason, autoClose: false }
+        : { reason };
+    await writeEvent(
+      sessionId,
+      SessionEventType.CLOSED,
+      actorId,
+      closedPayload,
+      meta.requestId
+    );
+    await writeAudit(actorId, SessionEventType.CLOSED, { sessionId, ...closedPayload }, meta);
+    const payload = await serializeSession(outcome.updated);
+    await notificationService.notify({
+      rooms: [`office:${outcome.officeId}`],
+      event: SocketEvents.SESSION_CLOSED,
+      payload,
+      requestId: meta.requestId,
+    });
+    await notificationService.notify({
+      rooms: [`office:${outcome.officeId}`],
+      event: SocketEvents.SESSION_UPDATED,
+      payload: null,
+      requestId: meta.requestId,
+    });
+    return payload;
+  }
+
+  const { summary, ticket, updated, officeId, officeName, openedById } = outcome;
+
+  await writeEvent(sessionId, SessionEventType.SENT, actorId ?? openedById, { reason, summary }, meta.requestId);
+  await writeAudit(actorId ?? openedById, SessionEventType.SENT, { sessionId, reason, summary }, meta);
+
+  const sessionPayload = await serializeSession(updated);
+  const ticketPayload = serializeTicket(ticket);
 
   await notificationService.notify({
-    rooms: [`office:${session.officeId}`],
+    rooms: [`office:${officeId}`],
     event: SocketEvents.SESSION_SENT,
     payload: sessionPayload,
     requestId: meta.requestId,
   });
   await notificationService.notify({
-    rooms: [`office:${session.officeId}`],
+    rooms: [`office:${officeId}`],
     event: SocketEvents.SESSION_UPDATED,
     payload: null,
     requestId: meta.requestId,
@@ -825,32 +855,32 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
     requestId: meta.requestId,
   });
 
-  const kitchenPushBody = `${session.office.name}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`;
+  const kitchenPushBody = `${officeName}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`;
   const kitchenStaffIds = await activeUserIds({ role: 'kitchen' });
   await notifyUsers(kitchenStaffIds, {
     title: 'Yeni mutfak siparişi',
     body: kitchenPushBody,
     event: SocketEvents.KITCHEN_NEW,
     payload: {
-      ticketId: result.ticket.id,
+      ticketId: ticket.id,
       sessionId,
-      officeId: session.officeId,
+      officeId,
       status: 'new',
     },
     url: '/kitchen',
-    tag: `kitchen-${result.ticket.id}`,
+    tag: `kitchen-${ticket.id}`,
     playSound: true,
   });
 
   const officeUserIds = await activeUserIds({
-    officeId: session.officeId,
+    officeId,
     role: 'office_user',
   });
   await notifyUsers(officeUserIds, {
     title: 'Sipariş mutfağa gitti',
-    body: `${session.office.name}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`,
+    body: `${officeName}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`,
     event: SessionEventType.SENT,
-    payload: { sessionId, ticketId: result.ticket.id },
+    payload: { sessionId, ticketId: ticket.id },
     url: '/office',
   });
 
@@ -932,6 +962,37 @@ export async function updateTicketStatus(user, ticketId, status, meta = {}) {
   return payload;
 }
 
+const UNAVAILABLE_DEDUP_MS = 15_000;
+/** @type {Map<string, number>} */
+const unavailableLastAt = new Map();
+/** @type {Map<string, Promise<void>>} */
+const unavailableTail = new Map();
+
+/** @returns {Promise<boolean>} true if this report should create notifications */
+function claimUnavailableSlot(ticketId) {
+  const prev = unavailableTail.get(ticketId) || Promise.resolve();
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  unavailableTail.set(
+    ticketId,
+    prev.then(() => gate).catch(() => gate)
+  );
+
+  return prev.then(() => {
+    try {
+      const now = Date.now();
+      const last = unavailableLastAt.get(ticketId) || 0;
+      if (now - last < UNAVAILABLE_DEDUP_MS) return false;
+      unavailableLastAt.set(ticketId, now);
+      return true;
+    } finally {
+      release();
+    }
+  });
+}
+
 export async function reportTicketUnavailable(user, ticketId, { items, note } = {}, meta = {}) {
   const ticket = await prisma.kitchenTicket.findUnique({
     where: { id: ticketId },
@@ -962,6 +1023,12 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
     items: cleanItems,
     note: trimmedNote,
   };
+
+  const shouldNotify = await claimUnavailableSlot(ticketId);
+  if (!shouldNotify) {
+    // Idempotent: same ticket within window — no duplicate events/push
+    return { ...eventPayload, deduped: true };
+  }
 
   await writeEvent(
     ticket.sessionId,
@@ -1083,6 +1150,37 @@ export async function setSpecialRequest(user, sessionId, note, meta = {}) {
 const STAFF_CALL_COOLDOWN_MS = 30_000;
 /** @type {Map<string, number>} */
 const staffCallLastAt = new Map();
+/** Serialize claims per office (single-process atomic cooldown). */
+/** @type {Map<string, Promise<void>>} */
+const staffCallTail = new Map();
+
+/**
+ * Atomically claim staff-call slot for an office.
+ * @returns {Promise<boolean>} true if claimed, false if still in cooldown
+ */
+function claimStaffCallSlot(officeId) {
+  const prev = staffCallTail.get(officeId) || Promise.resolve();
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  staffCallTail.set(
+    officeId,
+    prev.then(() => gate).catch(() => gate)
+  );
+
+  return prev.then(() => {
+    try {
+      const now = Date.now();
+      const last = staffCallLastAt.get(officeId) || 0;
+      if (now - last < STAFF_CALL_COOLDOWN_MS) return false;
+      staffCallLastAt.set(officeId, now);
+      return true;
+    } finally {
+      release();
+    }
+  });
+}
 
 /**
  * Office → kitchen staff call (independent of order flow).
@@ -1096,12 +1194,10 @@ export async function callKitchenStaff(user, meta = {}) {
   const office = await prisma.office.findUnique({ where: { id: user.officeId } });
   if (!office) throw httpError(404, 'Ofis bulunamadı');
 
-  const now = Date.now();
-  const prev = staffCallLastAt.get(user.officeId) || 0;
-  if (now - prev < STAFF_CALL_COOLDOWN_MS) {
+  const claimed = await claimStaffCallSlot(user.officeId);
+  if (!claimed) {
     throw httpError(429, 'Lütfen tekrar çağırmadan önce birkaç saniye bekleyin.');
   }
-  staffCallLastAt.set(user.officeId, now);
 
   const officeName = office.name || 'Ofis';
   const title = 'Cemile Abla';

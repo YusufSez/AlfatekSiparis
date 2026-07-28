@@ -34,6 +34,7 @@ export function signToken(user, { remember = true } = {}) {
       officeId: user.officeId ?? null,
       name: user.name,
       username: user.username,
+      tv: user.tokenVersion ?? 0,
     },
     resolveJwtSecret(),
     { expiresIn: remember ? '7d' : '1d', algorithm: 'HS256' }
@@ -57,6 +58,10 @@ export async function authMiddleware(req, _res, next) {
     });
     if (!user || !user.active || user.deletedAt) {
       return next(httpError(401, 'Kullanıcı bulunamadı veya pasif'));
+    }
+    const tokenTv = payload.tv ?? 0;
+    if (tokenTv !== (user.tokenVersion ?? 0)) {
+      return next(httpError(401, 'Oturum geçersiz — tekrar giriş yapın'));
     }
     req.user = user;
     next();

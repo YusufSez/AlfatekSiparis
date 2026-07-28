@@ -9,9 +9,11 @@ import {
   requireRoles,
 } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
+import { safeJsonParse } from '../../common/safeJson.js';
 import { getSettings, writeAudit, notifyUsers, getPresenceForOffice } from '../orders/orders.domain.js';
 import { getDashboardStats, globalSearch } from './admin.analytics.js';
 import { deleteAvatarFile } from '../../common/avatarStorage.js';
+import { notificationService } from '../notifications/notification.service.js';
 
 async function notifyOtherAdmins(actorId, { title, body, event, payload }) {
   const admins = await prisma.user.findMany({
@@ -177,7 +179,10 @@ router.patch('/users/:id', async (req, res, next) => {
 
     const data = {};
     if (parsed.data.name) data.name = parsed.data.name.trim();
-    if (parsed.data.password) data.passwordHash = await bcrypt.hash(parsed.data.password, 10);
+    if (parsed.data.password) {
+      data.passwordHash = await bcrypt.hash(parsed.data.password, 10);
+      data.tokenVersion = { increment: 1 };
+    }
     if (parsed.data.role) data.role = parsed.data.role;
     if (parsed.data.active !== undefined) data.active = parsed.data.active;
     if (parsed.data.role === 'admin' || parsed.data.role === 'kitchen') data.officeId = null;
@@ -196,6 +201,15 @@ router.patch('/users/:id', async (req, res, next) => {
       include: { office: true },
     });
     await writeAudit(req.user.id, 'admin.user_update', { id: user.id }, clientMeta(req));
+
+    const deactivated = parsed.data.active === false;
+    const roleChanged = parsed.data.role && parsed.data.role !== existing.role;
+    const officeChanged =
+      data.officeId !== undefined && data.officeId !== existing.officeId;
+    if (deactivated || roleChanged || officeChanged) {
+      notificationService.disconnectUser(user.id);
+    }
+
     res.json({ user: publicUser(user) });
   } catch (e) {
     next(e.status ? e : httpError(404, 'Kullanıcı güncellenemedi'));
@@ -266,6 +280,7 @@ router.delete('/users/:id', async (req, res, next) => {
       event: 'admin.user_deleted',
       payload: { userId: targetId, previousRole: existing.role },
     });
+    notificationService.disconnectUser(targetId);
     res.json({ ok: true, id: targetId });
   } catch (e) {
     next(e.status ? e : httpError(400, 'Kullanıcı silinemedi'));
@@ -432,7 +447,7 @@ router.get('/logs', async (req, res, next) => {
         id: l.id,
         action: l.action,
         actor: l.actor,
-        payload: JSON.parse(l.payload),
+        payload: safeJsonParse(l.payload, {}),
         ip: l.ip,
         userAgent: l.userAgent,
         requestId: l.requestId,

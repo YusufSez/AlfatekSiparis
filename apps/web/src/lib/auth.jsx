@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { api, clearAuthStorage, getToken, setToken } from './api';
-import { syncPushAfterLogin, unsubscribePush } from './push';
+import { syncPushAfterLogin } from './push';
 
 const AuthContext = createContext(null);
 
@@ -14,16 +14,26 @@ export function AuthProvider({ children }) {
       setLoading(false);
       return;
     }
-    api('/auth/me')
+    let cancelled = false;
+    const ac = new AbortController();
+    api('/auth/me', { signal: ac.signal })
       .then((data) => {
+        if (cancelled || ac.signal.aborted) return;
         setUser(data.user);
         syncPushAfterLogin();
       })
-      .catch(() => {
+      .catch((err) => {
+        if (cancelled || ac.signal.aborted || err?.name === 'AbortError') return;
         clearAuthStorage();
         setUser(null);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled && !ac.signal.aborted) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
   }, []);
 
   useEffect(() => {
@@ -51,11 +61,7 @@ export function AuthProvider({ children }) {
         return data.user;
       },
       async logout() {
-        try {
-          await unsubscribePush();
-        } catch {
-          /* ignore */
-        }
+        // Do not touch push prefs or unsubscribe — only settings opt-out does that.
         clearAuthStorage();
         setUser(null);
       },

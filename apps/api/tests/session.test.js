@@ -157,6 +157,20 @@ describe('SESSION', () => {
     expect(second.status).toBe(429);
     expect(String(second.body.error || '')).toMatch(/bekleyin/i);
   });
+
+  it('paralel staff-call — yalnız biri 200, diğeri 429', async () => {
+    const t = await token();
+    const [a, b] = await Promise.all([
+      request(app).post('/sessions/staff-call').set(authHeader(t)).send({}),
+      request(app).post('/sessions/staff-call').set(authHeader(t)).send({}),
+    ]);
+    const statuses = [a.status, b.status].sort((x, y) => x - y);
+    expect(statuses).toEqual([200, 429]);
+    const notes = await prisma.userNotification.count({
+      where: { event: 'kitchen:staff_call' },
+    });
+    expect(notes).toBeGreaterThan(0);
+  });
 });
 
 describe('RACE CONDITION', () => {
