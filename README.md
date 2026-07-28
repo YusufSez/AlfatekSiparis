@@ -209,14 +209,14 @@ npm run dev:api
 npm run dev:web
 ```
 
-Vite terminalinde benzer çıktı görünür (HTTPS):
+Vite terminalinde benzer çıktı görünür:
 
 ```text
-  ➜  Local:   https://localhost:5173/
-  ➜  Network: https://192.168.1.42:5173/
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: http://192.168.1.42:5173/
 ```
 
-API terminalinde (HTTP — Vite proxy üzerinden erişilir):
+API terminalinde:
 
 ```text
 Local   http://localhost:4000
@@ -225,12 +225,10 @@ Network http://192.168.1.42:4000
 
 ### 2. Telefonda Network URL’yi açın
 
-Örnek: `https://192.168.1.42:5173`
+Örnek: `http://192.168.1.42:5173`
 
-İlk açılışta self-signed sertifika uyarısı çıkar — aşağıdaki **Development HTTPS** bölümüne bakın.
-
-Frontend development’ta API ve Socket.io **aynı origin** üzerinden Vite proxy ile `localhost:4000`’e gider (mixed content yok).  
-`apps/web/.env` içinde `VITE_API_URL` boş bırakılmalıdır.
+Frontend development’ta API adresini **otomatik** üretir (`sayfa hostname` + port `4000`).  
+`apps/web/.env` içinde `VITE_API_URL` boş bırakılmalıdır (veya `apps/web/.env.local.example` dosyasına bakın).
 
 ### 3. Windows Güvenlik Duvarı
 
@@ -242,65 +240,16 @@ Manuel: Gelen kurallarında TCP **5173** ve **4000** portlarını açın.
 | Kontrol | |
 | --- | --- |
 | Telefon ve PC aynı Wi-Fi’de | ✓ |
-| Vite `Network` URL (`https://…:5173`) telefon tarayıcısında | ✓ |
-| Sertifika uyarısı kabul edildi | ✓ |
+| Vite `Network` URL telefon tarayıcısında | ✓ |
 | API `0.0.0.0` dinliyor (`HOST` varsayılan) | ✓ |
 | CORS development’ta LAN `*:5173` origin’lerine açık | ✓ |
-| Socket.io Vite proxy (`/socket.io`) | ✓ |
+| Socket.io aynı host:4000 | ✓ |
 
 Sorun olursa:
 
 1. PC’de `http://<LAN-IP>:4000/health` telefon tarayıcısından açılabiliyor mu?
-2. `VITE_API_URL=http://localhost:4000` sabitse kaldırın / boşaltın (HTTPS sayfada mixed content oluşur).
+2. `VITE_API_URL=http://localhost:4000` sabitse kaldırın / boşaltın (telefonda localhost telefona gider).
 3. VPN / misafir Wi-Fi cihazlar arası izolasyonu kapatın.
-
----
-
-## Development HTTPS
-
-PWA, Service Worker, `beforeinstallprompt` ve Web Push için tarayıcı **secure context** ister. Development’ta Vite `@vitejs/plugin-basic-ssl` ile HTTPS sunar (`host: true`, port `5173`). Production build etkilenmez.
-
-### Başlatma
-
-```bash
-npm run dev:api
-npm run dev:web
-```
-
-Telefonda: `https://<PC-LAN-IP>:5173` (ör. `https://192.168.1.42:5173`).
-
-### Self-signed sertifika uyarısı
-
-İlk açılışta tarayıcı “bağlantınız özel değil / güvenilir değil” uyarısı gösterir. Bu beklenen davranıştır.
-
-**Android Chrome**
-
-1. Uyarı ekranında **Gelişmiş** / **Advanced**
-2. **…adresine git (güvenli değil)** / **Proceed to … (unsafe)** seçin
-3. Sayfa yüklendikten sonra Profil → Bildirimler’de Secure Context’in yeşil olduğunu doğrulayın
-
-**iPhone Safari**
-
-1. Uyarıda **Ayrıntıları Göster** / **Show Details**
-2. **Bu Web Sitesini Ziyaret Et** / **visit this website**
-3. Onaylayın; gerekirse adresi tekrar açın
-4. iOS’ta PWA için: Paylaş → **Ana Ekrana Ekle**, uygulamayı oradan açın (Web Push için iOS 16.4+)
-
-### Mixed content
-
-HTTPS frontend, HTTP API’ye doğrudan (`http://IP:4000`) istek atmamalıdır. Development’ta istekler Vite proxy üzerinden gider; `VITE_API_URL` boş kalmalıdır. HTTPS sayfada HTTP `VITE_API_URL` otomatik yok sayılır.
-
-### Doğrulama
-
-Profil → Bildirimler → Debug:
-
-- ✔ Secure Context  
-- ✔ Service Worker  
-- ✔ PushManager / Notification  
-- Manifest `OK`  
-- BeforeInstallPrompt: Android’de genelde **Hazır** (kriterler sağlanınca)
-
-Konsol (development): `SW registering…`, `SW registered`, `SW ready`, `Push subscribed`.
 
 ---
 
@@ -465,8 +414,8 @@ Bruno örnek: `bruno/health-login.bru`
 | `CORS_ORIGIN` | önerilir | `http://localhost:5173` | İzinli origin (virgülle çoklu); **dev’de LAN Vite origin’leri otomatik** |
 | `BUILD_DATE` | hayır | — | `/version` |
 | `GIT_COMMIT` | hayır | — | `/version` |
-| `VITE_API_URL` | web build | *(dev’de boş = Vite proxy)* | Frontend API adresi; HTTPS sayfada HTTP URL yok sayılır |
-| `VITE_API_PORT` | hayır | `4000` | (eski) Dev otomatik API portu; proxy kullanıldığında gerekmez |
+| `VITE_API_URL` | web build | *(dev’de boş = otomatik hostname:4000)* | Frontend API adresi |
+| `VITE_API_PORT` | hayır | `4000` | Dev otomatik API portu |
 
 ---
 

@@ -1,34 +1,20 @@
 /**
  * Resolve API base URL for fetch + Socket.io.
  * - Explicit VITE_API_URL wins (production builds / overrides).
- * - In Vite DEV under HTTPS: always same-origin (empty) → Vite proxy → HTTP API
- *   (avoids mixed content: https page must not call http://IP:4000).
- * - In Vite DEV under HTTP: same-origin proxy also works for LAN phones.
+ * - In Vite DEV, use the page hostname + API port so phones on LAN work
+ *   (http://192.168.x.x:5173 → http://192.168.x.x:4000).
  * - Otherwise empty string (same-origin / Vite proxy).
  */
 export function resolveApiBaseUrl() {
   const configured = String(import.meta.env.VITE_API_URL || '')
     .trim()
     .replace(/\/$/, '');
+  if (configured) return configured;
 
-  if (configured) {
-    if (
-      import.meta.env.DEV &&
-      typeof window !== 'undefined' &&
-      window.location?.protocol === 'https:' &&
-      configured.startsWith('http:')
-    ) {
-      console.warn(
-        '[api] HTTPS sayfada HTTP VITE_API_URL yok sayıldı; Vite proxy kullanılıyor (mixed content engeli).'
-      );
-      return '';
-    }
-    return configured;
-  }
-
-  // DEV: prefer Vite proxy (works for http:// and https:// LAN URLs)
-  if (import.meta.env.DEV) {
-    return '';
+  if (import.meta.env.DEV && typeof window !== 'undefined' && window.location?.hostname) {
+    const port = String(import.meta.env.VITE_API_PORT || '4000').trim() || '4000';
+    const { protocol, hostname } = window.location;
+    return `${protocol}//${hostname}:${port}`;
   }
 
   return '';

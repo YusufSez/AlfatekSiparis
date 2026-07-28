@@ -8,7 +8,6 @@ import { useAdminData } from '../../lib/adminData';
 import PageHeader from '../../components/ui/PageHeader';
 import Button from '../../components/ui/Button';
 import { Badge } from '../../components/Badge';
-import PushNotificationSettings from '../../components/PushNotificationSettings';
 import { Skeleton, EmptyState } from '../../components/LoadStates';
 import { formatDateTime, initials } from '../../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../../lib/uxLabels';
@@ -116,10 +115,6 @@ export default function AdminProfilePage() {
           </Button>
         </div>
       </section>
-
-      <div style={{ marginTop: '1rem' }}>
-        <PushNotificationSettings />
-      </div>
 
       <section className="card-surface" style={{ marginTop: '1rem' }}>
         <h3 className="form-title">Şifre değiştir</h3>

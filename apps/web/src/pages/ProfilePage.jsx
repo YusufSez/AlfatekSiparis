@@ -7,7 +7,6 @@ import { useToast } from '../lib/toast';
 import AppHeader from '../components/AppHeader';
 import { Badge } from '../components/Badge';
 import Button from '../components/ui/Button';
-import PushNotificationSettings from '../components/PushNotificationSettings';
 import { Skeleton, EmptyState } from '../components/LoadStates';
 import { formatDateTime, initials } from '../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../lib/uxLabels';
@@ -120,8 +119,6 @@ export default function ProfilePage() {
                 </Button>
               </div>
             </section>
-
-            <PushNotificationSettings />
 
             <section className="card-surface">
               <h3 className="form-title">Son siparişler</h3>

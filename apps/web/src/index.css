@@ -3131,7 +3131,6 @@ html[data-theme='dark'] .stack-form textarea {
   min-width: 0;
   font-weight: 600;
   line-height: 1.35;
-  white-space: pre-wrap;
 }
 
 .toast-actions {

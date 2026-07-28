@@ -7,7 +7,6 @@ import { ThemeProvider } from './lib/theme';
 import { ToastProvider } from './lib/toast';
 import { ConfirmProvider } from './lib/confirm';
 import ErrorBoundary from './components/ErrorBoundary';
-import PwaBootstrap from './components/PwaBootstrap';
 import App from './App';
 import './index.css';
 import './_mobile.css';
@@ -18,7 +17,6 @@ createRoot(document.getElementById('root')).render(
     <ErrorBoundary>
       <ThemeProvider>
         <ToastProvider>
-          <PwaBootstrap />
           <ConfirmProvider>
             <BrowserRouter>
               <AuthProvider>

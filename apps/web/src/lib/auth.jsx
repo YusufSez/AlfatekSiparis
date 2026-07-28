@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { api, clearAuthStorage, getToken, setToken } from './api';
-import { syncPushAfterLogin, unsubscribePush } from './push';
 
 const AuthContext = createContext(null);
 
@@ -32,11 +31,6 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('auth:expired', onExpired);
   }, []);
 
-  useEffect(() => {
-    if (!user) return;
-    syncPushAfterLogin().catch(() => {});
-  }, [user?.id]);
-
   const value = useMemo(
     () => ({
       user,
@@ -48,15 +42,9 @@ export function AuthProvider({ children }) {
         });
         setToken(data.token, { remember });
         setUser(data.user);
-        syncPushAfterLogin().catch(() => {});
         return data.user;
       },
-      async logout() {
-        try {
-          await unsubscribePush();
-        } catch {
-          /* ignore */
-        }
+      logout() {
         clearAuthStorage();
         setUser(null);
       },

@@ -48,16 +48,6 @@ async function broadcast() {
     payload: { announcements },
     broadcast: true,
   });
-  const top = announcements[0];
-  if (top) {
-    await notificationService.sendPushToAll({
-      title: `📢 Duyuru: ${top.title}`,
-      body: top.body,
-      url: '/',
-      event: SocketEvents.ANNOUNCEMENT,
-      tag: `announce-${top.id}`,
-    });
-  }
 }
 
 router.get('/active', authMiddleware, async (_req, res, next) => {
