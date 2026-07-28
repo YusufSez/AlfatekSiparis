@@ -55,7 +55,7 @@ export async function authMiddleware(req, _res, next) {
       where: { id: payload.sub },
       include: { office: true },
     });
-    if (!user || !user.active) {
+    if (!user || !user.active || user.deletedAt) {
       return next(httpError(401, 'Kullanıcı bulunamadı veya pasif'));
     }
     req.user = user;

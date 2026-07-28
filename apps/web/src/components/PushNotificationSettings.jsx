@@ -126,12 +126,14 @@ export default function PushNotificationSettings() {
   async function onTestPush() {
     setBusy(true);
     try {
-      if (!status.subscribed) {
-        await subscribePush();
+      const s = await getPushStatus();
+      setStatus(s);
+      if (!s.subscribed) {
+        toast.error('Önce bu cihazda push aboneliği açın');
+        return;
       }
       const res = await sendTestPush();
       toast.success(res.sent ? 'Test bildirimi gönderildi' : 'Abonelik yok — bildirim gönderilemedi');
-      await refresh();
     } catch (err) {
       toast.error(err.message || 'Test bildirimi başarısız');
     } finally {

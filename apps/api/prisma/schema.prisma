@@ -39,15 +39,16 @@ model Office {
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   name         String
-  username     String   @unique
+  username     String    @unique
   passwordHash String
-  role         Role     @default(office_user)
+  role         Role      @default(office_user)
   officeId     String?
-  active       Boolean  @default(true)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  active       Boolean   @default(true)
+  deletedAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   office         Office?              @relation(fields: [officeId], references: [id])
   openedSessions OrderSession[]       @relation("OpenedBy")
@@ -57,6 +58,8 @@ model User {
   sessionEvents  SessionEvent[]
   notifications  UserNotification[]
   pushSubscriptions PushSubscription[]
+
+  @@index([deletedAt])
 }
 
 model MenuItem {

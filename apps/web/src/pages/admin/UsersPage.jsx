@@ -9,11 +9,15 @@ import { Badge } from '../../components/Badge';
 import { EmptyState, TableSkeleton } from '../../components/LoadStates';
 import { api } from '../../lib/api';
 import { useAdminData } from '../../lib/adminData';
+import { useAuth } from '../../lib/auth';
+import { useConfirm } from '../../lib/confirm';
 import { formatDateTime, initials } from '../../lib/format';
 import { ROLE_META, roleHint, roleLabel } from '../../lib/uxLabels';
 
 export default function UsersPage() {
   const [params] = useSearchParams();
+  const { user: me } = useAuth();
+  const { confirm } = useConfirm();
   const { users, offices, onlineMap, lastLoginMap, refresh, notify, booting } = useAdminData();
   const [q, setQ] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
@@ -74,6 +78,27 @@ export default function UsersPage() {
       await api(`/admin/users/${u.id}`, { method: 'PATCH', body: { active: !u.active } });
       await refresh();
       notify.success(u.active ? `${u.name} pasifleştirildi` : `${u.name} aktifleştirildi`);
+    } catch (err) {
+      notify.error(err.message);
+    }
+  }
+
+  async function deleteUser(u) {
+    if (me?.id && u.id === me.id) {
+      notify.error('Kendi hesabınızı silemezsiniz');
+      return;
+    }
+    const ok = await confirm({
+      title: 'Kullanıcıyı sil',
+      message: `“${u.name}” (@${u.username}) kalıcı olarak silinsin mi? Bu işlem geri alınamaz. Sipariş ve log geçmişi korunur; hesap anonimleştirilir.`,
+      confirmLabel: 'Kalıcı sil',
+      tone: 'danger',
+    });
+    if (!ok) return;
+    try {
+      await api(`/admin/users/${u.id}`, { method: 'DELETE' });
+      await refresh();
+      notify.success('Kullanıcı silindi');
     } catch (err) {
       notify.error(err.message);
     }
@@ -159,6 +184,16 @@ export default function UsersPage() {
                 setResetPassword('');
               },
             },
+            ...(me?.id === u.id
+              ? []
+              : [
+                  {
+                    id: 'delete',
+                    label: 'Sil',
+                    tone: 'danger',
+                    onSelect: () => deleteUser(u),
+                  },
+                ]),
           ]}
         />
       ),

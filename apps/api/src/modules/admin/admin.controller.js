@@ -80,7 +80,9 @@ router.patch('/offices/:id', async (req, res, next) => {
 
 router.delete('/offices/:id', async (req, res, next) => {
   try {
-    const users = await prisma.user.count({ where: { officeId: req.params.id } });
+    const users = await prisma.user.count({
+      where: { officeId: req.params.id, deletedAt: null },
+    });
     if (users > 0) throw httpError(400, 'Önce ofisteki kullanıcıları taşıyın veya silin');
     await prisma.office.delete({ where: { id: req.params.id } });
     await writeAudit(req.user.id, 'admin.office_delete', { id: req.params.id }, clientMeta(req));
@@ -93,6 +95,7 @@ router.delete('/offices/:id', async (req, res, next) => {
 router.get('/users', async (_req, res, next) => {
   try {
     const users = await prisma.user.findMany({
+      where: { deletedAt: null },
       include: { office: true },
       orderBy: { name: 'asc' },
     });
@@ -149,7 +152,9 @@ router.patch('/users/:id', async (req, res, next) => {
       .safeParse(req.body);
     if (!parsed.success) throw httpError(400, 'Geçersiz veri');
 
-    const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.user.findFirst({
+      where: { id: req.params.id, deletedAt: null },
+    });
     if (!existing) throw httpError(404, 'Kullanıcı bulunamadı');
 
     const data = {};
@@ -176,6 +181,65 @@ router.patch('/users/:id', async (req, res, next) => {
     res.json({ user: publicUser(user) });
   } catch (e) {
     next(e.status ? e : httpError(404, 'Kullanıcı güncellenemedi'));
+  }
+});
+
+/**
+ * Permanent delete via anonymization — keeps order/audit FK integrity.
+ * Row remains; PII cleared; login impossible; hidden from admin lists.
+ */
+router.delete('/users/:id', async (req, res, next) => {
+  try {
+    const targetId = req.params.id;
+    if (targetId === req.user.id) {
+      throw httpError(400, 'Kendi hesabınızı silemezsiniz');
+    }
+
+    const existing = await prisma.user.findFirst({
+      where: { id: targetId, deletedAt: null },
+    });
+    if (!existing) throw httpError(404, 'Kullanıcı bulunamadı');
+
+    if (existing.role === 'admin' && existing.active) {
+      const otherActiveAdmins = await prisma.user.count({
+        where: { role: 'admin', active: true, deletedAt: null, id: { not: targetId } },
+      });
+      if (otherActiveAdmins < 1) {
+        throw httpError(400, 'Son aktif admin hesabı silinemez');
+      }
+    }
+
+    const tombstoneUsername = `deleted_${existing.id}`;
+    const passwordHash = await bcrypt.hash(
+      `deleted-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      10
+    );
+
+    await prisma.$transaction(async (tx) => {
+      await tx.pushSubscription.deleteMany({ where: { userId: targetId } });
+      await tx.userNotification.deleteMany({ where: { userId: targetId } });
+      await tx.user.update({
+        where: { id: targetId },
+        data: {
+          name: 'Silinmiş Kullanıcı',
+          username: tombstoneUsername,
+          passwordHash,
+          officeId: null,
+          active: false,
+          deletedAt: new Date(),
+        },
+      });
+    });
+
+    await writeAudit(
+      req.user.id,
+      'admin.user_delete',
+      { id: targetId, previousUsername: existing.username, previousRole: existing.role },
+      clientMeta(req)
+    );
+    res.json({ ok: true, id: targetId });
+  } catch (e) {
+    next(e.status ? e : httpError(400, 'Kullanıcı silinemedi'));
   }
 });
 

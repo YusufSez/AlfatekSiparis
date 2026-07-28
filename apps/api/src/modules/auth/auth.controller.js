@@ -28,7 +28,7 @@ router.post('/login', async (req, res, next) => {
       where: { username: parsed.data.username.trim().toLowerCase() },
       include: { office: true },
     });
-    if (!user || !user.active) throw httpError(401, 'Geçersiz giriş bilgileri');
+    if (!user || !user.active || user.deletedAt) throw httpError(401, 'Geçersiz giriş bilgileri');
     const ok = await bcrypt.compare(parsed.data.password, user.passwordHash);
     if (!ok) throw httpError(401, 'Geçersiz giriş bilgileri');
 
