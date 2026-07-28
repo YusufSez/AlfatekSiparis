@@ -8,6 +8,7 @@ export const SessionEventType = Object.freeze({
   CLOSED: 'session.closed',
   PREPARING: 'ticket.preparing',
   DELIVERED: 'ticket.delivered',
+  UNAVAILABLE: 'ticket.unavailable',
 });
 
 export const SocketEvents = Object.freeze({
@@ -17,6 +18,7 @@ export const SocketEvents = Object.freeze({
   SESSION_CLOSED: 'session:closed',
   KITCHEN_NEW: 'kitchen:new_ticket',
   KITCHEN_UPDATED: 'kitchen:updated',
+  KITCHEN_UNAVAILABLE: 'kitchen:unavailable',
   PRESENCE_UPDATE: 'presence:update',
   NOTIFICATION: 'notification:new',
   ANNOUNCEMENT: 'announcement:updated',

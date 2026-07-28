@@ -18,6 +18,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       includeAssets: [
         'favicon.ico',
@@ -25,17 +28,20 @@ export default defineConfig({
         'favicon-96x96.png',
         'apple-touch-icon.png',
         'alfatek.png',
+        'pwa-192.png',
+        'pwa-512.png',
       ],
       manifest: {
-        name: 'Alfatek Ofis Sipariş Sistemi',
-        short_name: 'Alfatek Sipariş',
+        name: 'Alfatek Sipariş',
+        short_name: 'Alfatek',
         description:
           'Teknik ve Operasyon ofisleri için gerçek zamanlı toplu içecek sipariş sistemi',
-        theme_color: '#ffffff',
-        background_color: '#ffffff',
+        theme_color: '#0f3d2e',
+        background_color: '#f3f5f4',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
+        scope: '/',
         lang: 'tr',
         icons: [
           {
@@ -58,8 +64,12 @@ export default defineConfig({
           },
         ],
       },
-      workbox: {
-        navigateFallback: '/index.html',
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
+      },
+      devOptions: {
+        enabled: true,
+        type: 'module',
       },
     }),
   ],

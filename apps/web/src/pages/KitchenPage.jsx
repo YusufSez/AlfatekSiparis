@@ -6,6 +6,7 @@ import { useConfirm } from '../lib/confirm';
 import { useToast } from '../lib/toast';
 import AppHeader from '../components/AppHeader';
 import AnnouncementBanner from '../components/AnnouncementBanner';
+import Modal from '../components/Modal';
 import { LoadError, OfflineBanner, EmptyState, CardSkeleton } from '../components/LoadStates';
 import { useOnline } from '../lib/useOnline';
 import { iconMeta } from '../lib/uxLabels';
@@ -152,6 +153,10 @@ export default function KitchenPage() {
   const [leaving, setLeaving] = useState({});
   const [flashOk, setFlashOk] = useState(null);
   const [busyId, setBusyId] = useState(null);
+  const [shortageTicket, setShortageTicket] = useState(null);
+  const [shortageSelected, setShortageSelected] = useState({});
+  const [shortageNote, setShortageNote] = useState('');
+  const [shortageBusy, setShortageBusy] = useState(false);
   const inFlightRef = useRef(new Set());
   const ticketsRef = useRef([]);
   const undoToastRef = useRef(null);
@@ -184,9 +189,6 @@ export default function KitchenPage() {
         return [ticket, ...prev];
       });
       playBeep(soundOn);
-      if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-        new Notification(`${ticket.office.name} siparişi`, { body: summaryText(ticket) });
-      }
       if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
     });
     const offUpd = on('kitchen:updated', (ticket) => {
@@ -315,6 +317,47 @@ export default function KitchenPage() {
     }
   }
 
+  function openShortage(ticket) {
+    const selected = {};
+    for (const s of ticket.summary || []) {
+      if (s.menuItemId) selected[s.menuItemId] = false;
+    }
+    setShortageSelected(selected);
+    setShortageNote('');
+    setShortageTicket(ticket);
+  }
+
+  function toggleShortageItem(menuItemId) {
+    setShortageSelected((prev) => ({ ...prev, [menuItemId]: !prev[menuItemId] }));
+  }
+
+  async function submitShortage() {
+    if (!shortageTicket) return;
+    const items = (shortageTicket.summary || [])
+      .filter((s) => shortageSelected[s.menuItemId])
+      .map((s) => ({ menuItemId: s.menuItemId, name: s.name }));
+    if (!items.length) {
+      setError('En az bir ürün seçin');
+      return;
+    }
+    setShortageBusy(true);
+    setError('');
+    try {
+      await api(`/kitchen/tickets/${shortageTicket.id}/unavailable`, {
+        method: 'POST',
+        body: { items, note: shortageNote.trim() || null },
+      });
+      toast.success('Eksik ürün bildirimi gönderildi');
+      setShortageTicket(null);
+      setShortageNote('');
+      setShortageSelected({});
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setShortageBusy(false);
+    }
+  }
+
   const nextAction = {
     new: { status: 'preparing', label: '🟡 Hazırlamaya Başla', tone: 'warning' },
     preparing: { status: 'delivered', label: '🟢 Teslim Ettim', tone: 'success' },
@@ -413,11 +456,21 @@ export default function KitchenPage() {
                   <div className="ticket-actions">
                     {action && (
                       <button
-                        className={`btn xl kitchen-action ${action.tone} pressable`}
+                        className={`btn xl kitchen-action kitchen-primary-action ${action.tone} pressable`}
                         disabled={busyId === ticket.id}
                         onClick={() => setStatus(ticket.id, action.status)}
                       >
                         {busyId === ticket.id ? '…' : action.label}
+                      </button>
+                    )}
+                    {ticket.status === 'new' && (
+                      <button
+                        type="button"
+                        className="btn ghost kitchen-shortage-btn pressable"
+                        disabled={busyId === ticket.id || shortageBusy}
+                        onClick={() => openShortage(ticket)}
+                      >
+                        Ürün Yok
                       </button>
                     )}
                   </div>
@@ -427,6 +480,70 @@ export default function KitchenPage() {
             })}
           </div>
         )}
+
+        <Modal
+          open={Boolean(shortageTicket)}
+          title="Eksik Ürün Bildir"
+          onClose={() => {
+            if (shortageBusy) return;
+            setShortageTicket(null);
+          }}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn ghost"
+                disabled={shortageBusy}
+                onClick={() => setShortageTicket(null)}
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                className="btn primary pressable"
+                disabled={shortageBusy}
+                onClick={submitShortage}
+              >
+                {shortageBusy ? 'Gönderiliyor…' : 'Bildir'}
+              </button>
+            </>
+          }
+        >
+          {shortageTicket && (
+            <div className="shortage-form">
+              <p className="muted tiny">
+                Sipariş: #{String(shortageTicket.id).slice(-6)} · {shortageTicket.office?.name}
+              </p>
+              <p className="shortage-form-label">Eksik ürün</p>
+              <div className="shortage-check-list">
+                {(shortageTicket.summary || []).map((s) => (
+                  <label key={s.menuItemId} className="shortage-check">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(shortageSelected[s.menuItemId])}
+                      onChange={() => toggleShortageItem(s.menuItemId)}
+                    />
+                    <span aria-hidden>{iconMeta(s.icon).emoji}</span>
+                    <span>
+                      {s.name} x{s.qty}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <label className="shortage-note-label" htmlFor="shortage-note">
+                Not
+              </label>
+              <textarea
+                id="shortage-note"
+                rows={2}
+                maxLength={200}
+                placeholder="Örn. Soda kalmadı"
+                value={shortageNote}
+                onChange={(e) => setShortageNote(e.target.value)}
+              />
+            </div>
+          )}
+        </Modal>
 
         <section className="kitchen-history">
           <h3>Sipariş Geçmişi</h3>

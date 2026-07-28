@@ -71,6 +71,13 @@ body,
   min-height: 48px;
 }
 
+.ticket-card.kitchen-card .ticket-actions .kitchen-shortage-btn {
+  width: auto;
+  max-width: max-content;
+  min-height: 36px;
+  align-self: center;
+}
+
 .kitchen-office-banner strong {
   overflow-wrap: anywhere;
 }
@@ -491,6 +498,17 @@ body,
   .avatar {
     width: 32px;
     height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+  }
+
+  .avatar.xl {
+    width: 72px;
+    height: 72px;
+    min-width: 72px;
+    min-height: 72px;
   }
 
   .login-card-head h2 {

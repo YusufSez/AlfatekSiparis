@@ -1,21 +1,19 @@
 /**
  * Resolve API base URL for fetch + Socket.io.
- * - Explicit VITE_API_URL wins (production builds / overrides).
- * - In Vite DEV, use the page hostname + API port so phones on LAN work
- *   (http://192.168.x.x:5173 → http://192.168.x.x:4000).
- * - Otherwise empty string (same-origin / Vite proxy).
+ * - DEV: always page hostname + :4000 (LAN / phone safe). Ignores VITE_API_URL
+ *   so a leftover localhost override cannot break mobile testing.
+ * - Production: VITE_API_URL, else same-origin (empty).
  */
 export function resolveApiBaseUrl() {
+  if (import.meta.env.DEV && typeof window !== 'undefined' && window.location?.hostname) {
+    const port = String(import.meta.env.VITE_API_PORT || '4000').trim() || '4000';
+    return `${window.location.protocol}//${window.location.hostname}:${port}`;
+  }
+
   const configured = String(import.meta.env.VITE_API_URL || '')
     .trim()
     .replace(/\/$/, '');
   if (configured) return configured;
-
-  if (import.meta.env.DEV && typeof window !== 'undefined' && window.location?.hostname) {
-    const port = String(import.meta.env.VITE_API_PORT || '4000').trim() || '4000';
-    const { protocol, hostname } = window.location;
-    return `${protocol}//${hostname}:${port}`;
-  }
 
   return '';
 }

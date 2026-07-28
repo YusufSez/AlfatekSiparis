@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { prisma } from '../../common/db.js';
 import { authMiddleware, clientMeta, requireRoles } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
-import { serializeTicket, updateTicketStatus } from '../orders/orders.domain.js';
+import { serializeTicket, updateTicketStatus, reportTicketUnavailable } from '../orders/orders.domain.js';
 
 const router = Router();
 router.use(authMiddleware, requireRoles('kitchen', 'admin'));
@@ -42,6 +42,35 @@ router.patch('/tickets/:id', async (req, res, next) => {
       clientMeta(req)
     );
     res.json({ ticket });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/tickets/:id/unavailable', async (req, res, next) => {
+  try {
+    const parsed = z
+      .object({
+        items: z
+          .array(
+            z.object({
+              menuItemId: z.string().optional().nullable(),
+              name: z.string().min(1).max(80),
+            })
+          )
+          .min(1)
+          .max(30),
+        note: z.string().max(200).optional().nullable(),
+      })
+      .safeParse(req.body);
+    if (!parsed.success) throw httpError(400, 'Geçersiz eksik ürün bildirimi');
+    const result = await reportTicketUnavailable(
+      req.user,
+      req.params.id,
+      parsed.data,
+      clientMeta(req)
+    );
+    res.json({ ok: true, report: result });
   } catch (err) {
     next(err);
   }

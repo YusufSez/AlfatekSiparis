@@ -11,6 +11,7 @@ import { Badge } from '../../components/Badge';
 import { Skeleton, EmptyState } from '../../components/LoadStates';
 import { formatDateTime, initials } from '../../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../../lib/uxLabels';
+import PushNotificationSettings from '../../components/PushNotificationSettings';
 
 export default function AdminProfilePage() {
   const { user } = useAuth();
@@ -115,6 +116,8 @@ export default function AdminProfilePage() {
           </Button>
         </div>
       </section>
+
+      <PushNotificationSettings />
 
       <section className="card-surface" style={{ marginTop: '1rem' }}>
         <h3 className="form-title">Şifre değiştir</h3>

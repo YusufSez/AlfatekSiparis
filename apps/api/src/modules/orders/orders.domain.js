@@ -32,9 +32,32 @@ async function writeEvent(sessionId, type, actorId, payload, requestId) {
   });
 }
 
-async function notifyUsers(userIds, { title, body, event, payload }) {
+async function activeUserIds({ role, roles, officeId, excludeIds = [] } = {}) {
+  const roleFilter = roles?.length ? { in: roles } : role || undefined;
+  const users = await prisma.user.findMany({
+    where: {
+      active: true,
+      ...(roleFilter ? { role: roleFilter } : {}),
+      ...(officeId ? { officeId } : {}),
+    },
+    select: { id: true },
+  });
+  const skip = new Set(excludeIds.filter(Boolean));
+  return users.map((u) => u.id).filter((id) => !skip.has(id));
+}
+
+async function notifyUsers(userIds, { title, body, event, payload, url, tag } = {}) {
   const unique = [...new Set(userIds.filter(Boolean))];
   if (!unique.length) return;
+  const p = payload && typeof payload === 'object' ? payload : {};
+  const resolvedTag =
+    tag ||
+    (p.ticketId
+      ? `order-${p.ticketId}-${p.status || event || 'evt'}`
+      : p.sessionId
+        ? `order-${p.sessionId}-${event || 'evt'}`
+        : event || 'alfatek-notify');
+
   await prisma.userNotification.createMany({
     data: unique.map((userId) => ({
       userId,
@@ -48,9 +71,18 @@ async function notifyUsers(userIds, { title, body, event, payload }) {
     await notificationService.notify({
       rooms: [`user:${userId}`],
       event: SocketEvents.NOTIFICATION,
-      payload: { title, body, event, payload },
+      payload: { title, body, event, payload, tag: resolvedTag },
     });
   }
+  await notificationService.sendPushToUsers(unique, {
+    title,
+    body,
+    event,
+    url: url || '/',
+    tag: resolvedTag,
+  }).catch((err) => {
+    logger.warn('notifyUsers.push_failed', { message: err?.message });
+  });
 }
 
 export async function serializeSession(session) {
@@ -504,19 +536,17 @@ export async function cancelSession(user, sessionId, meta = {}) {
   );
   await writeAudit(user.id, SessionEventType.CLOSED, { sessionId, reason: 'cancel' }, meta);
 
-  const officeUsers = await prisma.user.findMany({
-    where: { officeId: session.officeId, role: 'office_user', active: true },
-    select: { id: true },
+  const officeUserIds = await activeUserIds({
+    officeId: session.officeId,
+    role: 'office_user',
   });
-  await notifyUsers(
-    officeUsers.map((u) => u.id),
-    {
-      title: 'Sipariş iptal edildi',
-      body: `${actorName} siparişi iptal etti.`,
-      event: SessionEventType.CLOSED,
-      payload: { sessionId, reason: 'cancel' },
-    }
-  );
+  await notifyUsers(officeUserIds, {
+    title: 'Sipariş iptal edildi',
+    body: `${actorName} siparişi iptal etti.`,
+    event: SessionEventType.CLOSED,
+    payload: { sessionId, reason: 'cancel' },
+    url: '/office',
+  });
 
   const payload = await serializeSession(closed);
   await notificationService.notify({
@@ -716,17 +746,32 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
     requestId: meta.requestId,
   });
 
-  const officeUserIds = (
-    await prisma.user.findMany({
-      where: { officeId: session.officeId, active: true },
-      select: { id: true },
-    })
-  ).map((u) => u.id);
+  const kitchenPushBody = `${session.office.name}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`;
+  const kitchenStaffIds = await activeUserIds({ roles: ['kitchen', 'admin'] });
+  await notifyUsers(kitchenStaffIds, {
+    title: 'Yeni mutfak siparişi',
+    body: kitchenPushBody,
+    event: SocketEvents.KITCHEN_NEW,
+    payload: {
+      ticketId: result.ticket.id,
+      sessionId,
+      officeId: session.officeId,
+      status: 'new',
+    },
+    url: '/kitchen',
+    tag: `kitchen-${result.ticket.id}`,
+  });
+
+  const officeUserIds = await activeUserIds({
+    officeId: session.officeId,
+    role: 'office_user',
+  });
   await notifyUsers(officeUserIds, {
     title: 'Sipariş mutfağa gitti',
     body: `${session.office.name}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`,
     event: SessionEventType.SENT,
     payload: { sessionId, ticketId: result.ticket.id },
+    url: '/office',
   });
 
   return sessionPayload;
@@ -789,22 +834,109 @@ export async function updateTicketStatus(user, ticketId, status, meta = {}) {
     preparing: ticket.status === 'delivered' ? 'Sipariş geri alındı' : 'Sipariş hazırlanıyor',
     delivered: 'Sipariş teslim edildi',
   };
+  // Office-only status copy — kitchen/admin must not get "hazırlanıyor / teslim" inbox+push
   if (titles[status]) {
-    const officeUserIds = (
-      await prisma.user.findMany({
-        where: { officeId: ticket.officeId, active: true },
-        select: { id: true },
-      })
-    ).map((u) => u.id);
+    const officeUserIds = await activeUserIds({
+      officeId: ticket.officeId,
+      role: 'office_user',
+    });
     await notifyUsers(officeUserIds, {
       title: titles[status],
       body: ticket.office.name,
       event: eventType,
       payload: { ticketId, status, undo: ticket.status === 'delivered' && status === 'preparing' },
+      url: '/office',
     });
   }
 
   return payload;
+}
+
+export async function reportTicketUnavailable(user, ticketId, { items, note } = {}, meta = {}) {
+  const ticket = await prisma.kitchenTicket.findUnique({
+    where: { id: ticketId },
+    include: { office: true },
+  });
+  if (!ticket) throw httpError(404, 'Sipariş bulunamadı');
+  if (!['new', 'preparing'].includes(ticket.status)) {
+    throw httpError(400, 'Bu sipariş için eksik ürün bildirilemez');
+  }
+
+  const cleanItems = (Array.isArray(items) ? items : [])
+    .map((item) => ({
+      menuItemId: item?.menuItemId || item?.id || null,
+      name: String(item?.name || '').trim().slice(0, 80),
+    }))
+    .filter((item) => item.name)
+    .slice(0, 30);
+  if (!cleanItems.length) throw httpError(400, 'En az bir ürün seçin');
+
+  const trimmedNote =
+    typeof note === 'string' && note.trim() ? note.trim().slice(0, 200) : null;
+
+  const eventPayload = {
+    ticketId: ticket.id,
+    sessionId: ticket.sessionId,
+    officeId: ticket.officeId,
+    office: ticket.office,
+    items: cleanItems,
+    note: trimmedNote,
+  };
+
+  await writeEvent(
+    ticket.sessionId,
+    SessionEventType.UNAVAILABLE,
+    user.id,
+    eventPayload,
+    meta.requestId
+  );
+  await writeAudit(user.id, 'kitchen.unavailable', eventPayload, meta);
+
+  const names = cleanItems.map((i) => i.name).join(', ');
+  const body = trimmedNote
+    ? `${names} mevcut olmadığı için hazırlanamadı. ${trimmedNote}`
+    : `${names} mevcut olmadığı için hazırlanamadı.`;
+
+  const officeUserIds = await activeUserIds({
+    officeId: ticket.officeId,
+    role: 'office_user',
+  });
+  await notifyUsers(officeUserIds, {
+    title: '⚠ Siparişinizde eksik ürün var',
+    body,
+    event: SessionEventType.UNAVAILABLE,
+    payload: eventPayload,
+    url: '/office',
+  });
+
+  // Other kitchen/admin staff (not the reporter) — kitchen-oriented wording
+  const kitchenStaffIds = await activeUserIds({
+    roles: ['kitchen', 'admin'],
+    excludeIds: [user.id],
+  });
+  await notifyUsers(kitchenStaffIds, {
+    title: 'Eksik ürün bildirildi',
+    body: `${ticket.office.name}: ${names}${trimmedNote ? ` — ${trimmedNote}` : ''}`,
+    event: SessionEventType.UNAVAILABLE,
+    payload: eventPayload,
+    url: '/kitchen',
+    tag: `kitchen-unavail-${ticket.id}`,
+  });
+
+  await notificationService.notify({
+    rooms: [`office:${ticket.officeId}`, 'kitchen', 'admins'],
+    event: SocketEvents.KITCHEN_UNAVAILABLE,
+    payload: eventPayload,
+    requestId: meta.requestId,
+  });
+
+  logger.info('kitchen.unavailable', {
+    ticketId,
+    items: names,
+    requestId: meta.requestId,
+  });
+
+  return eventPayload;
 }
 
 export async function getPresenceForOffice(officeId) {

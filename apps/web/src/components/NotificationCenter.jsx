@@ -1,20 +1,27 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { useSocket } from '../lib/socket';
+import { notificationDedupeKey, showOsNotification } from '../lib/osNotify';
+import { isNotificationEventAllowed } from '../lib/notificationRoles';
 
 export default function NotificationCenter() {
+  const { user } = useAuth();
   const { on } = useSocket();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const wrapRef = useRef(null);
   const panelRef = useRef(null);
   const [coords, setCoords] = useState(null);
+  const role = user?.role;
 
   async function load() {
     try {
       const data = await api('/notifications');
-      setItems(data.notifications);
+      setItems(
+        (data.notifications || []).filter((n) => isNotificationEventAllowed(role, n.event))
+      );
     } catch {
       /* ignore */
     }
@@ -23,19 +30,35 @@ export default function NotificationCenter() {
   useEffect(() => {
     load();
     return on('notification:new', (n) => {
-      setItems((prev) => [
-        {
-          id: `live-${Date.now()}`,
-          title: n.title,
-          body: n.body,
-          event: n.event,
-          createdAt: new Date().toISOString(),
-          readAt: null,
-        },
-        ...prev,
-      ]);
+      if (!isNotificationEventAllowed(role, n.event)) return;
+
+      showOsNotification(n.title, n.body, {
+        tag: n.tag,
+        event: n.event,
+        payload: n.payload,
+      });
+
+      const key = notificationDedupeKey(n);
+      setItems((prev) => {
+        if (prev.some((item) => item._dedupeKey === key || notificationDedupeKey(item) === key)) {
+          return prev;
+        }
+        return [
+          {
+            id: `live-${Date.now()}`,
+            _dedupeKey: key,
+            title: n.title,
+            body: n.body,
+            event: n.event,
+            payload: n.payload,
+            createdAt: new Date().toISOString(),
+            readAt: null,
+          },
+          ...prev,
+        ];
+      });
     });
-  }, [on]);
+  }, [on, role]);
 
   useLayoutEffect(() => {
     if (!open || !wrapRef.current) {

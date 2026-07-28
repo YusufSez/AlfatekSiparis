@@ -11,9 +11,30 @@ const ICON_META = {
   water: { label: 'Su', emoji: '💧' },
   juice: { label: 'Meyve Suyu', emoji: '🧃' },
   herbal: { label: 'Bitki Çayı', emoji: '🍵' },
-  other: { label: 'Diğer', emoji: '📝' },
-  cup: { label: 'Diğer', emoji: '🧋' },
+  other: { label: 'Diğer', emoji: '📦' },
+  cup: { label: 'Diğer', emoji: '☕' },
 };
+
+const ICON_ALIASES = {
+  çay: 'tea',
+  cay: 'tea',
+  tea: 'tea',
+  kahve: 'coffee',
+  coffee: 'coffee',
+  soda: 'soda',
+  su: 'water',
+  water: 'water',
+  juice: 'juice',
+  herbal: 'herbal',
+  'bitki çayı': 'herbal',
+  'bitki cayi': 'herbal',
+  other: 'other',
+  cup: 'cup',
+  diğer: 'other',
+  digger: 'other',
+};
+
+const ICON_FALLBACK = { label: 'Diğer', emoji: '📦' };
 
 const ACTION_MAP = [
   { test: /^auth\.password_change$/, tone: 'warning', icon: '🟠', text: () => 'şifresini değiştirdi.' },
@@ -86,7 +107,16 @@ export function roleHint(role) {
 }
 
 export function iconMeta(icon) {
-  return ICON_META[icon] || { label: icon || 'Diğer', emoji: '🧋' };
+  const raw = String(icon || '').trim();
+  if (!raw) return { ...ICON_FALLBACK };
+
+  const lower = raw.toLowerCase();
+  const aliased = ICON_ALIASES[lower] || lower;
+  const meta = ICON_META[aliased] || ICON_META[raw];
+  if (meta?.emoji) return meta;
+
+  // Unknown key — never show empty / tofu glyph
+  return { label: raw, emoji: ICON_FALLBACK.emoji };
 }
 
 export function formatLogTime(iso) {

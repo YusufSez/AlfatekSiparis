@@ -9,10 +9,12 @@ import {
   leaveSession,
   openSession,
   serializeSession,
+  serializeTicket,
   skipSession,
   upsertLine,
 } from './orders.domain.js';
 import { ordersRepository } from './orders.repository.js';
+import { prisma } from '../../common/db.js';
 
 const router = Router();
 
@@ -34,6 +36,25 @@ router.get('/presence', requireRoles('office_user', 'admin'), async (req, res, n
     const officeId = req.user.role === 'admin' ? req.query.officeId : req.user.officeId;
     if (!officeId) return res.json({ users: [] });
     res.json({ users: await getPresenceForOffice(String(officeId)) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Recent kitchen tickets for the office — OfficePage "Geçmiş Siparişler". */
+router.get('/history', requireRoles('office_user', 'admin'), async (req, res, next) => {
+  try {
+    const officeId = req.user.role === 'admin' ? req.query.officeId : req.user.officeId;
+    if (!officeId) return res.json({ tickets: [] });
+    const rawLimit = Number(req.query.limit ?? req.query.take ?? 20);
+    const limit = Math.min(20, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 20));
+    const tickets = await prisma.kitchenTicket.findMany({
+      where: { officeId: String(officeId) },
+      include: { office: true },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
+    res.json({ tickets: tickets.map(serializeTicket), limit });
   } catch (err) {
     next(err);
   }

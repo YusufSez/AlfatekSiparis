@@ -12,6 +12,7 @@ const EVENTS = [
   'session:closed',
   'kitchen:new_ticket',
   'kitchen:updated',
+  'kitchen:unavailable',
   'presence:update',
   'notification:new',
   'announcement:updated',

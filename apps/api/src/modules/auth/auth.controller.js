@@ -53,10 +53,76 @@ router.get('/me', authMiddleware, async (req, res) => {
   res.json({ user: publicUser(req.user) });
 });
 
-/** Profil istatistikleri — salt okunur, iş kurallarını değiştirmez */
+/** Profil istatistikleri — salt okunur, iş kurallarını değiştirmez; role göre alanlar değişir */
 router.get('/profile', authMiddleware, async (req, res, next) => {
   try {
     const userId = req.user.id;
+    const role = req.user.role;
+
+    if (role === 'kitchen') {
+      const audits = await prisma.auditLog.findMany({
+        where: {
+          actorId: userId,
+          action: { in: ['kitchen.preparing', 'kitchen.delivered'] },
+        },
+        select: { action: true, payload: true, createdAt: true },
+        orderBy: { createdAt: 'desc' },
+        take: 80,
+      });
+
+      const ticketMeta = new Map();
+      for (const row of audits) {
+        let ticketId = null;
+        try {
+          ticketId = JSON.parse(row.payload || '{}')?.ticketId || null;
+        } catch {
+          ticketId = null;
+        }
+        if (!ticketId || ticketMeta.has(ticketId)) continue;
+        ticketMeta.set(ticketId, { action: row.action, at: row.createdAt });
+      }
+
+      const ticketIds = [...ticketMeta.keys()];
+      const tickets = ticketIds.length
+        ? await prisma.kitchenTicket.findMany({
+            where: { id: { in: ticketIds } },
+            include: { office: { select: { id: true, name: true, color: true } } },
+          })
+        : [];
+      const byId = new Map(tickets.map((t) => [t.id, t]));
+
+      const recentPrepared = ticketIds
+        .slice(0, 10)
+        .map((id) => {
+          const ticket = byId.get(id);
+          const meta = ticketMeta.get(id);
+          if (!ticket || !meta) return null;
+          let summary = [];
+          try {
+            summary = JSON.parse(ticket.summaryJson || '[]');
+          } catch {
+            summary = [];
+          }
+          return {
+            id: ticket.id,
+            office: ticket.office?.name || null,
+            status: ticket.status,
+            action: meta.action,
+            at: meta.at || ticket.updatedAt,
+            summary: summary.map((s) => `${s.qty}× ${s.name}`).join(', '),
+          };
+        })
+        .filter(Boolean);
+
+      return res.json({
+        user: publicUser(req.user),
+        stats: {
+          preparedTickets: ticketIds.length,
+          recentPrepared,
+        },
+      });
+    }
+
     const [openedCount, lines, recentLines, joinedSessions] = await Promise.all([
       prisma.orderSession.count({ where: { openedById: userId } }),
       prisma.orderLine.findMany({

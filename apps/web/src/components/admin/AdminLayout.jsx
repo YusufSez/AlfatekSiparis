@@ -120,8 +120,8 @@ function AdminShellInner() {
           <SearchResults results={searchResults} onNavigate={() => setSearchResults(null)} />
           {booting ? <CardSkeleton /> : <Outlet />}
         </div>
-        <AdminFooter />
       </div>
+      <AdminFooter />
     </div>
   );
 }

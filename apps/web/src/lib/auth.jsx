@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { api, clearAuthStorage, getToken, setToken } from './api';
+import { syncPushAfterLogin, unsubscribePush } from './push';
 
 const AuthContext = createContext(null);
 
@@ -14,7 +15,10 @@ export function AuthProvider({ children }) {
       return;
     }
     api('/auth/me')
-      .then((data) => setUser(data.user))
+      .then((data) => {
+        setUser(data.user);
+        syncPushAfterLogin();
+      })
       .catch(() => {
         clearAuthStorage();
         setUser(null);
@@ -42,9 +46,15 @@ export function AuthProvider({ children }) {
         });
         setToken(data.token, { remember });
         setUser(data.user);
+        syncPushAfterLogin();
         return data.user;
       },
-      logout() {
+      async logout() {
+        try {
+          await unsubscribePush();
+        } catch {
+          /* ignore */
+        }
         clearAuthStorage();
         setUser(null);
       },

@@ -10,6 +10,194 @@ import Button from '../components/ui/Button';
 import { Skeleton, EmptyState } from '../components/LoadStates';
 import { formatDateTime, initials } from '../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../lib/uxLabels';
+import PushNotificationSettings from '../components/PushNotificationSettings';
+
+const KITCHEN_ACTION_LABEL = {
+  'kitchen.preparing': 'Hazırlanıyor',
+  'kitchen.delivered': 'Teslim edildi',
+};
+
+function ProfileHero({ u, connected }) {
+  return (
+    <section className="profile-hero card-surface">
+      <div className="avatar xl" aria-hidden>
+        {initials(u.name)}
+      </div>
+      <div>
+        <h2>{u.name}</h2>
+        <p className="muted">@{u.username}</p>
+        <div className="profile-chips">
+          <Badge tone="info">{roleLabel(u.role)}</Badge>
+          {u.office && <Badge tone="secondary">{u.office.name}</Badge>}
+          <Badge tone={connected ? 'success' : 'warning'}>
+            {connected ? 'Online' : 'Bağlantı yok'}
+          </Badge>
+        </div>
+        <p className="muted tiny">{roleHint(u.role)}</p>
+        {u.createdAt && (
+          <p className="muted tiny">Hesap: {formatDateTime(u.createdAt)}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function ThemeSection({ theme }) {
+  return (
+    <section className="card-surface">
+      <h3 className="form-title">Tema</h3>
+      <div className="row-actions wrap">
+        <Button
+          variant={!theme.isDark ? 'primary' : 'ghost'}
+          onClick={() => theme.setTheme('light')}
+        >
+          ☀ Açık
+        </Button>
+        <Button
+          variant={theme.isDark ? 'primary' : 'ghost'}
+          onClick={() => theme.setTheme('dark')}
+        >
+          🌙 Koyu
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function PasswordSection({
+  currentPassword,
+  setCurrentPassword,
+  newPassword,
+  setNewPassword,
+  busy,
+  onSubmit,
+}) {
+  return (
+    <section className="card-surface">
+      <h3 className="form-title">Şifre değiştir</h3>
+      <form className="stack-form" onSubmit={onSubmit}>
+        <label>
+          Mevcut şifre
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            required
+            autoComplete="current-password"
+          />
+        </label>
+        <label>
+          Yeni şifre
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            minLength={8}
+            required
+            autoComplete="new-password"
+          />
+        </label>
+        <Button type="submit" variant="primary" loading={busy}>
+          Şifreyi güncelle
+        </Button>
+      </form>
+    </section>
+  );
+}
+
+function OfficeStats({ stats }) {
+  return (
+    <>
+      <section className="dash-grid profile-stats">
+        <div className="dash-card">
+          <span>Katıldığı sipariş</span>
+          <strong>{stats?.joinedSessions ?? '—'}</strong>
+        </div>
+        <div className="dash-card">
+          <span>Açtığı sipariş</span>
+          <strong>{stats?.openedSessions ?? '—'}</strong>
+        </div>
+        <div className="dash-card">
+          <span>En çok istediği</span>
+          <strong>
+            {stats?.topProduct
+              ? `${iconMeta(stats.topProduct.icon || 'cup').emoji} ${stats.topProduct.name}`
+              : '—'}
+          </strong>
+        </div>
+      </section>
+
+      <section className="card-surface">
+        <h3 className="form-title">Son siparişler</h3>
+        {!stats?.recentOrders?.length ? (
+          <EmptyState
+            icon="🧾"
+            title="Henüz sipariş yok"
+            description="İlk siparişiniz burada görünecek."
+          />
+        ) : (
+          <ul className="profile-orders">
+            {stats.recentOrders.map((o) => (
+              <li key={o.id}>
+                <span aria-hidden>{iconMeta(o.icon).emoji}</span>
+                <div>
+                  <strong>
+                    {o.qty}× {o.product}
+                  </strong>
+                  <div className="muted tiny">
+                    {o.office || '—'} · {o.status} · {o.at ? formatDateTime(o.at) : ''}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
+  );
+}
+
+function KitchenStats({ stats }) {
+  const prepared = stats?.preparedTickets;
+  const recent = stats?.recentPrepared || [];
+
+  return (
+    <>
+      <section className="dash-grid profile-stats">
+        <div className="dash-card">
+          <span>Hazırladığı sipariş</span>
+          <strong>{prepared != null ? prepared : '—'}</strong>
+        </div>
+      </section>
+
+      <section className="card-surface">
+        <h3 className="form-title">Son hazırlanan siparişler</h3>
+        {!recent.length ? (
+          <EmptyState
+            icon="🍳"
+            title="Henüz kayıt yok"
+            description="Hazırladığınız siparişler burada görünecek."
+          />
+        ) : (
+          <ul className="profile-orders">
+            {recent.map((o) => (
+              <li key={o.id}>
+                <span aria-hidden>🍽️</span>
+                <div>
+                  <strong>{o.summary || 'Sipariş'}</strong>
+                  <div className="muted tiny">
+                    {o.office || '—'} · {KITCHEN_ACTION_LABEL[o.action] || o.status || '—'}
+                    {o.at ? ` · ${formatDateTime(o.at)}` : ''}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
+  );
+}
 
 export default function ProfilePage() {
   const { user, logout } = useAuth();
@@ -49,6 +237,7 @@ export default function ProfilePage() {
 
   const u = profile?.user || user;
   const stats = profile?.stats;
+  const isKitchen = (u?.role || user?.role) === 'kitchen';
 
   return (
     <div className="page">
@@ -57,121 +246,28 @@ export default function ProfilePage() {
         {booting ? (
           <Skeleton rows={7} />
         ) : !u ? (
-          <EmptyState icon="👤" title="Profil yüklenemedi" ctaLabel="Yenile" onCta={() => window.location.reload()} />
+          <EmptyState
+            icon="👤"
+            title="Profil yüklenemedi"
+            ctaLabel="Yenile"
+            onCta={() => window.location.reload()}
+          />
         ) : (
           <div className="profile-layout">
-            <section className="profile-hero card-surface">
-              <div className="avatar xl" aria-hidden>
-                {initials(u.name)}
-              </div>
-              <div>
-                <h2>{u.name}</h2>
-                <p className="muted">@{u.username}</p>
-                <div className="profile-chips">
-                  <Badge tone="info">{roleLabel(u.role)}</Badge>
-                  {u.office && <Badge tone="secondary">{u.office.name}</Badge>}
-                  <Badge tone={connected ? 'success' : 'warning'}>
-                    {connected ? 'Online' : 'Bağlantı yok'}
-                  </Badge>
-                </div>
-                <p className="muted tiny">{roleHint(u.role)}</p>
-                {u.createdAt && (
-                  <p className="muted tiny">
-                    Hesap: {formatDateTime(u.createdAt)}
-                  </p>
-                )}
-              </div>
-            </section>
+            <ProfileHero u={u} connected={connected} />
 
-            <section className="dash-grid profile-stats">
-              <div className="dash-card">
-                <span>Katıldığı sipariş</span>
-                <strong>{stats?.joinedSessions ?? '—'}</strong>
-              </div>
-              <div className="dash-card">
-                <span>Açtığı sipariş</span>
-                <strong>{stats?.openedSessions ?? '—'}</strong>
-              </div>
-              <div className="dash-card">
-                <span>En çok istediği</span>
-                <strong>
-                  {stats?.topProduct
-                    ? `${iconMeta(stats.topProduct.icon || 'cup').emoji} ${stats.topProduct.name}`
-                    : '—'}
-                </strong>
-              </div>
-            </section>
+            {isKitchen ? <KitchenStats stats={stats} /> : <OfficeStats stats={stats} />}
 
-            <section className="card-surface">
-              <h3 className="form-title">Tema</h3>
-              <div className="row-actions wrap">
-                <Button
-                  variant={!theme.isDark ? 'primary' : 'ghost'}
-                  onClick={() => theme.setTheme('light')}
-                >
-                  ☀ Açık
-                </Button>
-                <Button
-                  variant={theme.isDark ? 'primary' : 'ghost'}
-                  onClick={() => theme.setTheme('dark')}
-                >
-                  🌙 Koyu
-                </Button>
-              </div>
-            </section>
-
-            <section className="card-surface">
-              <h3 className="form-title">Son siparişler</h3>
-              {!stats?.recentOrders?.length ? (
-                <EmptyState icon="🧾" title="Henüz sipariş yok" description="İlk siparişiniz burada görünecek." />
-              ) : (
-                <ul className="profile-orders">
-                  {stats.recentOrders.map((o) => (
-                    <li key={o.id}>
-                      <span aria-hidden>{iconMeta(o.icon).emoji}</span>
-                      <div>
-                        <strong>
-                          {o.qty}× {o.product}
-                        </strong>
-                        <div className="muted tiny">
-                          {o.office || '—'} · {o.status} · {o.at ? formatDateTime(o.at) : ''}
-                        </div>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="card-surface">
-              <h3 className="form-title">Şifre değiştir</h3>
-              <form className="stack-form" onSubmit={changePassword}>
-                <label>
-                  Mevcut şifre
-                  <input
-                    type="password"
-                    value={currentPassword}
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                    required
-                    autoComplete="current-password"
-                  />
-                </label>
-                <label>
-                  Yeni şifre
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                    minLength={8}
-                    required
-                    autoComplete="new-password"
-                  />
-                </label>
-                <Button type="submit" variant="primary" loading={busy}>
-                  Şifreyi güncelle
-                </Button>
-              </form>
-            </section>
+            <ThemeSection theme={theme} />
+            <PushNotificationSettings />
+            <PasswordSection
+              currentPassword={currentPassword}
+              setCurrentPassword={setCurrentPassword}
+              newPassword={newPassword}
+              setNewPassword={setNewPassword}
+              busy={busy}
+              onSubmit={changePassword}
+            />
           </div>
         )}
       </main>

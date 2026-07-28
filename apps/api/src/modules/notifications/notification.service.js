@@ -1,3 +1,13 @@
+import {
+  configureVapid,
+  getVapidPublicKey,
+  isPushConfigured,
+  sendPushToUser,
+  sendPushToUsers,
+  sendPushToRole,
+  sendPushToAll,
+} from './push.service.js';
+
 export class SocketAdapter {
   constructor(io) {
     this.io = io;
@@ -18,6 +28,7 @@ export class SocketAdapter {
 export class NotificationService {
   constructor(adapters = []) {
     this.adapters = adapters;
+    configureVapid();
   }
 
   setSocket(io) {
@@ -27,7 +38,6 @@ export class NotificationService {
   }
 
   async notify({ rooms, event, payload, requestId, broadcast = false }) {
-    // Preserve null sentinel (cleared session) — spreading null yields {}
     const body =
       payload == null
         ? { session: null, requestId: requestId || null }
@@ -37,6 +47,30 @@ export class NotificationService {
         adapter.send({ rooms, event, payload: body, broadcast })
       )
     );
+  }
+
+  getVapidPublicKey() {
+    return getVapidPublicKey();
+  }
+
+  isPushConfigured() {
+    return isPushConfigured();
+  }
+
+  sendPushToUser(userId, note) {
+    return sendPushToUser(userId, note);
+  }
+
+  sendPushToUsers(userIds, note) {
+    return sendPushToUsers(userIds, note);
+  }
+
+  sendPushToRole(role, note) {
+    return sendPushToRole(role, note);
+  }
+
+  sendPushToAll(note) {
+    return sendPushToAll(note);
   }
 }
 

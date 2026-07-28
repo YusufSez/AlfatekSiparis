@@ -72,11 +72,31 @@ export const openApiSpec = {
     '/sessions/{id}/events': {
       get: { summary: 'Oturum zaman çizelgesi', responses: { 200: { description: 'OK' } } },
     },
+    '/sessions/history': {
+      get: {
+        summary: 'Ofis geçmiş siparişleri (son ticketlar, max 20)',
+        parameters: [
+          {
+            name: 'limit',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', minimum: 1, maximum: 20, default: 20 },
+          },
+        ],
+        responses: { 200: { description: 'OK' } },
+      },
+    },
     '/kitchen/tickets': {
       get: { summary: 'Mutfak ticket listesi', responses: { 200: { description: 'OK' } } },
     },
     '/kitchen/tickets/{id}': {
       patch: { summary: 'Ticket durumu güncelle', responses: { 200: { description: 'OK' } } },
+    },
+    '/kitchen/tickets/{id}/unavailable': {
+      post: {
+        summary: 'Eksik ürün bildir (mutfak → ofis)',
+        responses: { 200: { description: 'OK' } },
+      },
     },
     '/notifications': {
       get: { summary: 'Bildirim merkezi', responses: { 200: { description: 'OK' } } },

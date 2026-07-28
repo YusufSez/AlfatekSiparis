@@ -13,6 +13,7 @@
     "db:migrate:dev": "npm run db:migrate:dev -w apps/api",
     "db:seed": "npm run db:seed -w apps/api",
     "db:setup": "npm run db:setup -w apps/api",
+    "db:clean:dev": "npm run db:clean:dev -w apps/api",
     "backup": "npm run backup -w apps/api",
     "restore": "npm run restore -w apps/api",
     "test": "npm run test -w apps/api",
