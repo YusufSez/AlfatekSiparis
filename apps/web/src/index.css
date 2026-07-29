@@ -82,7 +82,8 @@
   --header-bg: rgba(255, 255, 255, 0.92);
   --surface-2: #ffffff;
   --nav-h: 64px;
-  --bottom-nav-h: 68px;
+  /* Content row height only — safe-area is applied separately in padding/offsets */
+  --bottom-nav-h: 64px;
 }
 
 html[data-theme='dark'] {
@@ -422,7 +423,7 @@ select {
   }
 
   .page {
-    padding-bottom: calc(5.5rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(6.25rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
   }
 
   .app-bottom-nav {
@@ -435,13 +436,19 @@ select {
     align-items: stretch;
     justify-content: space-around;
     gap: 0.25rem;
-    min-height: var(--bottom-nav-h);
-    padding: 0.35rem 0.5rem calc(0.35rem + env(safe-area-inset-bottom, 0px));
+    /* Height = content + padding; safe-area only in padding-bottom */
+    min-height: calc(var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+    height: auto;
+    padding: 0.4rem 0.5rem calc(0.4rem + env(safe-area-inset-bottom, 0px));
+    padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
     background: var(--header-bg);
     border-top: 1px solid var(--line);
     backdrop-filter: blur(12px);
     box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.06);
     box-sizing: border-box;
+    /* Keep bar above iOS home indicator / browser chrome */
+    transform: translateZ(0);
   }
 
   .bottom-nav-link {
@@ -450,15 +457,17 @@ select {
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 0.2rem;
-    min-height: 56px;
+    gap: 0.15rem;
+    min-height: calc(var(--bottom-nav-h) - 0.8rem);
+    height: auto;
     min-width: 0;
-    padding: 0.35rem 0.4rem;
+    padding: 0.3rem 0.35rem;
     border-radius: 14px;
     text-decoration: none;
     color: var(--muted);
     font-weight: 700;
-    font-size: 0.82rem;
+    font-size: 0.78rem;
+    line-height: 1.15;
     border: 1px solid transparent;
     transition:
       color 0.15s ease,
@@ -6017,26 +6026,61 @@ html[data-theme='dark'] .table-select {
     bottom: calc(0.55rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
     z-index: 25;
   }
+
+  /* Idle "Sipariş yok": keep CTAs in normal flow so they never cover the description */
+  .order-idle-screen .order-primary-actions {
+    position: relative;
+    bottom: auto;
+    z-index: auto;
+    margin-top: 0.25rem;
+  }
+
+  .order-idle-screen .empty-state-panel {
+    padding-bottom: 1.25rem;
+  }
+
+  .order-idle-screen .empty-state-panel .muted {
+    display: block;
+    max-width: 28rem;
+    margin-inline: auto;
+    line-height: 1.45;
+  }
+
+  .order-idle-screen {
+    padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 @media (max-width: 768px) {
-  .order-success-screen,
-  .order-idle-screen {
+  .order-success-screen {
     padding-bottom: 1rem;
+  }
+
+  .order-idle-screen {
+    padding-bottom: calc(1.75rem + env(safe-area-inset-bottom, 0px));
+    gap: 1rem;
   }
 
   .order-success-cta {
     position: sticky;
     left: auto;
     right: auto;
-    bottom: calc(0.45rem + env(safe-area-inset-bottom, 0px));
+    bottom: calc(0.45rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
     width: 100%;
     padding: 0.75rem;
+    z-index: 25;
   }
 
   .order-primary-actions .order-success-cta {
     position: relative;
     bottom: auto;
+    z-index: auto;
+  }
+
+  .order-idle-screen .order-success-cta {
+    position: relative;
+    bottom: auto;
+    z-index: auto;
   }
 
   .order-success-btn {
