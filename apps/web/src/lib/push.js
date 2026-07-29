@@ -234,6 +234,11 @@ export async function subscribePush() {
     },
   });
   setPushPrefForThisDevice(true);
+  console.info('[push] subscription saved', {
+    endpoint: String(json.endpoint).slice(0, 48),
+    standalone: window.matchMedia('(display-mode: standalone)').matches,
+    permission: Notification.permission,
+  });
   return sub;
 }
 

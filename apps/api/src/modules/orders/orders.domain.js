@@ -112,15 +112,25 @@ async function notifyUsers(userIds, { title, body, event, payload, url, tag, pla
       },
     });
   }
-  await notificationService.sendPushToUsers(allowedIds, {
-    title,
-    body,
-    event,
-    url: url || '/',
-    tag: resolvedTag,
-  }).catch((err) => {
-    logger.warn('notifyUsers.push_failed', { message: err?.message });
-  });
+  try {
+    const pushResult = await notificationService.sendPushToUsers(allowedIds, {
+      title,
+      body,
+      event,
+      url: url || '/',
+      tag: resolvedTag,
+    });
+    logger.info('notifyUsers.push_result', {
+      event,
+      tag: resolvedTag,
+      recipients: allowedIds.length,
+      sent: pushResult?.sent ?? 0,
+      attempted: pushResult?.attempted ?? 0,
+      gone: pushResult?.gone ?? 0,
+    });
+  } catch (err) {
+    logger.warn('notifyUsers.push_failed', { event, message: err?.message });
+  }
 }
 
 export async function serializeSession(session) {
@@ -676,6 +686,7 @@ export async function cancelSession(user, sessionId, meta = {}) {
     event: SessionEventType.CLOSED,
     payload: { sessionId, reason: 'cancel' },
     url: '/office',
+    tag: `session-closed-${sessionId}`,
   });
 
   const payload = await serializeSession(closed);
@@ -1247,11 +1258,13 @@ export async function callKitchenStaff(user, meta = {}) {
     },
     url: '/kitchen',
     tag: `staff-call-${office.id}`,
-    playSound: true,
+    // Staff call must not use the order notification sound
+    playSound: false,
   });
 
+  // Board sync: kitchen room + per-user rooms (belt-and-suspenders for open kitchen clients)
   await notificationService.notify({
-    rooms: ['kitchen'],
+    rooms: ['kitchen', ...kitchenStaffIds.map((id) => `user:${id}`)],
     event: SocketEvents.KITCHEN_STAFF_CALL,
     payload: {
       officeId: office.id,

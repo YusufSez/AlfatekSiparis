@@ -60,8 +60,17 @@ function toWebPushSubscription(row) {
 
 async function sendToSubscription(row, payload) {
   try {
-    await webpush.sendNotification(toWebPushSubscription(row), JSON.stringify(payload));
-    return true;
+    await webpush.sendNotification(toWebPushSubscription(row), JSON.stringify(payload), {
+      TTL: 60 * 60 * 24,
+      urgency: 'high',
+    });
+    logger.info('push.send_ok', {
+      userId: row.userId,
+      endpoint: row.endpoint.slice(0, 48),
+      event: payload?.event || null,
+      tag: payload?.tag || null,
+    });
+    return { ok: true, userId: row.userId, status: 201 };
   } catch (err) {
     const status = err?.statusCode;
     // Gone / invalid / unauthorized — drop stale endpoints (incl. iOS expiry quirks)
@@ -69,12 +78,19 @@ async function sendToSubscription(row, payload) {
       await prisma.pushSubscription.deleteMany({ where: { endpoint: row.endpoint } });
       logger.info('push.subscription_gone', {
         status,
+        userId: row.userId,
         endpoint: row.endpoint.slice(0, 48),
+        event: payload?.event || null,
       });
-    } else {
-      logger.warn('push.send_failed', { status, message: err?.message });
+      return { ok: false, userId: row.userId, status, gone: true };
     }
-    return false;
+    logger.warn('push.send_failed', {
+      status,
+      userId: row.userId,
+      message: err?.message,
+      event: payload?.event || null,
+    });
+    return { ok: false, userId: row.userId, status: status || null, gone: false };
   }
 }
 
@@ -85,10 +101,19 @@ async function sendToSubscription(row, payload) {
 export async function sendPushToUsers(userIds, note) {
   if (!isPushConfigured()) {
     configureVapid();
-    if (!isPushConfigured()) return { sent: 0 };
+    if (!isPushConfigured()) {
+      logger.warn('push.send_skipped_vapid', {
+        event: note?.event || null,
+        userCount: (userIds || []).length,
+      });
+      return { sent: 0, attempted: 0, users: 0, gone: 0 };
+    }
   }
   const unique = [...new Set((userIds || []).filter(Boolean))];
-  if (!unique.length) return { sent: 0 };
+  if (!unique.length) {
+    logger.info('push.send_skipped_no_users', { event: note?.event || null });
+    return { sent: 0, attempted: 0, users: 0, gone: 0 };
+  }
 
   let rows;
   try {
@@ -97,9 +122,24 @@ export async function sendPushToUsers(userIds, note) {
     });
   } catch (err) {
     logger.warn('push.subscription_query_failed', { message: err?.message });
-    return { sent: 0 };
+    return { sent: 0, attempted: 0, users: unique.length, gone: 0 };
   }
-  if (!rows.length) return { sent: 0 };
+
+  logger.info('push.send_start', {
+    event: note?.event || null,
+    tag: note?.tag || null,
+    targetUsers: unique.length,
+    subscriptions: rows.length,
+    userIdsWithSub: [...new Set(rows.map((r) => r.userId))].length,
+  });
+
+  if (!rows.length) {
+    logger.info('push.send_no_subscriptions', {
+      event: note?.event || null,
+      targetUsers: unique.length,
+    });
+    return { sent: 0, attempted: 0, users: unique.length, gone: 0 };
+  }
 
   const payload = {
     title: note.title || 'Alfatek Sipariş',
@@ -112,7 +152,17 @@ export async function sendPushToUsers(userIds, note) {
   };
 
   const results = await Promise.all(rows.map((row) => sendToSubscription(row, payload)));
-  return { sent: results.filter(Boolean).length };
+  const sent = results.filter((r) => r.ok).length;
+  const gone = results.filter((r) => r.gone).length;
+  logger.info('push.send_done', {
+    event: note?.event || null,
+    tag: note?.tag || null,
+    sent,
+    attempted: rows.length,
+    users: unique.length,
+    gone,
+  });
+  return { sent, attempted: rows.length, users: unique.length, gone };
 }
 
 export async function sendPushToUser(userId, note) {
@@ -142,7 +192,7 @@ export async function upsertPushSubscription(userId, { endpoint, keys, userAgent
   if (!endpoint || !keys?.p256dh || !keys?.auth) {
     throw new Error('Geçersiz push subscription');
   }
-  return prisma.pushSubscription.upsert({
+  const row = await prisma.pushSubscription.upsert({
     where: { endpoint },
     create: {
       userId,
@@ -158,6 +208,13 @@ export async function upsertPushSubscription(userId, { endpoint, keys, userAgent
       userAgent: userAgent || null,
     },
   });
+  logger.info('push.subscription_upserted', {
+    userId,
+    id: row.id,
+    endpoint: endpoint.slice(0, 48),
+    userAgent: userAgent ? String(userAgent).slice(0, 80) : null,
+  });
+  return row;
 }
 
 export async function deletePushSubscription(userId, endpoint) {

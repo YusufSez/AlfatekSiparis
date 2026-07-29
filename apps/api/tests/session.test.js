@@ -155,6 +155,7 @@ describe('SESSION', () => {
     const payload = JSON.parse(notes[0].payload || '{}');
     expect(payload.officeName).toBe('Teknik Ofis');
     expect(payload.calledAt).toBeTruthy();
+    expect(payload.playSound).toBe(false);
 
     const second = await request(app).post('/sessions/staff-call').set(authHeader(t)).send({});
     expect(second.status).toBe(429);

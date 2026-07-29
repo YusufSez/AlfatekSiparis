@@ -403,6 +403,16 @@ export default function KitchenPage() {
   }, [load, reconnectKey]);
 
   useEffect(() => {
+    function upsertStaffCall(raw) {
+      const call = staffCallFromSocket(raw);
+      if (!call?.officeId) return;
+      if (dismissedStaffCallsRef.current.has(call.officeId)) {
+        dismissedStaffCallsRef.current.delete(call.officeId);
+      }
+      setStaffCalls((prev) => mergeStaffCalls(prev, [call]));
+      if (navigator.vibrate) navigator.vibrate([100, 40, 100]);
+    }
+
     const offNew = on('kitchen:new_ticket', (ticket) => {
       setTickets((prev) => {
         if (prev.some((t) => t.id === ticket.id)) return prev;
@@ -411,15 +421,27 @@ export default function KitchenPage() {
       // Special order sound + OS toast → notification:new (playSound)
       if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
     });
-    // Board alert card — inbox/OS toast already via notification:new (avoid double toast)
+
+    // Primary board event
     const offStaffCall = on('kitchen:staff_call', (payload) => {
-      if (navigator.vibrate) navigator.vibrate([100, 40, 100]);
-      const call = staffCallFromSocket(payload);
-      if (dismissedStaffCallsRef.current.has(call.officeId)) {
-        dismissedStaffCallsRef.current.delete(call.officeId);
-      }
-      setStaffCalls((prev) => mergeStaffCalls(prev, [call]));
+      upsertStaffCall(payload);
     });
+
+    // Fallback: notification:new already reaches kitchen (inbox + sound path proven live).
+    // Use it so the card appears even if the kitchen-room board emit is missed.
+    const offNotif = on('notification:new', (n) => {
+      if (n?.event !== 'kitchen:staff_call') return;
+      upsertStaffCall({
+        officeId: n.payload?.officeId,
+        officeName: n.payload?.officeName,
+        callerId: n.payload?.callerId,
+        callerName: n.payload?.callerName,
+        title: n.title,
+        body: n.body,
+        calledAt: n.payload?.calledAt || n.createdAt,
+      });
+    });
+
     const offUpd = on('kitchen:updated', (ticket) => {
       if (!ticket?.id) return;
       if (inFlightRef.current.has(ticket.id)) {
@@ -431,6 +453,7 @@ export default function KitchenPage() {
     return () => {
       offNew();
       offStaffCall();
+      offNotif();
       offUpd();
     };
   }, [on, applyTicketUpdate]);

@@ -20,7 +20,7 @@ export class SocketAdapter {
       return;
     }
     // Dedupe rooms so sockets in multiple rooms (e.g. admin in kitchen+admins)
-    // receive each event once. Socket.IO union emit delivers at most once per socket.
+    // receive each event once. Socket.IO v4: to([...]) is a union of rooms.
     const unique = [...new Set((rooms || []).filter(Boolean))];
     if (!unique.length) return;
     this.io.to(unique).emit(event, payload);

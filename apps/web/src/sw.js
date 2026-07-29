@@ -16,6 +16,15 @@ try {
   /* ignore if index not in manifest during dev */
 }
 
+function isAppleMobile() {
+  const ua = self.navigator?.userAgent || '';
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  // iPadOS desktop UA
+  return (
+    self.navigator?.platform === 'MacIntel' && (self.navigator?.maxTouchPoints || 0) > 1
+  );
+}
+
 self.addEventListener('push', (event) => {
   let data = {
     title: 'Alfatek Sipariş',
@@ -41,10 +50,20 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
       const all = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      // Foreground tab → in-app toast/sound via notification:new; skip duplicate banner.
-      // Background / killed PWA → show push (iOS Home Screen needs a visible notification).
       const appVisible = all.some((client) => client.visibilityState === 'visible');
-      if (appVisible) return;
+      const apple = isAppleMobile();
+
+      // iOS Home Screen requires a user-visible notification for every push.
+      // Skipping showNotification can cause Apple to stop delivering further pushes.
+      // Non-Apple: skip banner when a visible tab already handles toast/sound.
+      if (appVisible && !apple) {
+        console.info('[sw-push] skip visible tab', {
+          event: data.event || null,
+          tag: data.tag || null,
+          clients: all.length,
+        });
+        return;
+      }
 
       const origin = self.location?.origin || '';
       const abs = (path) => {
@@ -54,13 +73,22 @@ self.addEventListener('push', (event) => {
         return `${origin}${path.startsWith('/') ? path : `/${path}`}`;
       };
 
+      console.info('[sw-push] showNotification', {
+        event: data.event || null,
+        tag: data.tag || null,
+        appVisible,
+        apple,
+        clients: all.length,
+      });
+
       await self.registration.showNotification(data.title, {
         body: data.body,
         icon: abs(data.icon || '/pwa-192.png'),
         badge: abs(data.badge || '/pwa-192.png'),
         tag: data.tag || 'alfatek',
         data: { url: data.url || '/', event: data.event || null },
-        renotify: false,
+        renotify: Boolean(data.event === 'session.closed' || data.event === 'kitchen:staff_call'),
+        silent: false,
       });
     })()
   );

@@ -1066,7 +1066,9 @@ html[data-theme='dark'] .login-bg {
 
 @media (max-width: 1024px) {
   .sticky-cta {
-    bottom: calc(0.65rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+    position: relative;
+    bottom: auto;
+    z-index: auto;
   }
 }
 
@@ -6021,17 +6023,28 @@ html[data-theme='dark'] .table-select {
 }
 
 @media (max-width: 1024px) {
+  /* Document flow only — sticky CTAs overlay cards / bottom nav in PWA */
+  .order-primary-actions,
+  .order-success-cta,
+  .order-idle-screen .order-primary-actions,
+  .order-idle-screen .order-success-cta,
+  .cta-row.sticky-cta,
+  .sticky-cta {
+    position: relative !important;
+    bottom: auto !important;
+    left: auto !important;
+    right: auto !important;
+    z-index: auto !important;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+
   .order-primary-actions {
-    position: sticky;
-    bottom: calc(0.55rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
-    z-index: 25;
+    margin-top: 0.75rem;
   }
 
   /* Idle "Sipariş yok": keep CTAs in normal flow so they never cover the description */
   .order-idle-screen .order-primary-actions {
-    position: relative;
-    bottom: auto;
-    z-index: auto;
     margin-top: 0.25rem;
   }
 
@@ -6062,25 +6075,8 @@ html[data-theme='dark'] .table-select {
   }
 
   .order-success-cta {
-    position: sticky;
-    left: auto;
-    right: auto;
-    bottom: calc(0.45rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
     width: 100%;
     padding: 0.75rem;
-    z-index: 25;
-  }
-
-  .order-primary-actions .order-success-cta {
-    position: relative;
-    bottom: auto;
-    z-index: auto;
-  }
-
-  .order-idle-screen .order-success-cta {
-    position: relative;
-    bottom: auto;
-    z-index: auto;
   }
 
   .order-success-btn {
