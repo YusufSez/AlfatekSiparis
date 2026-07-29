@@ -16,6 +16,9 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?VAPID_PRIVATE_KEY is required}
       VAPID_EMAIL: ${VAPID_EMAIL:-mailto:admin@localhost}
       METRICS_TOKEN: ${METRICS_TOKEN:?METRICS_TOKEN is required}
+      # Enable only when a reverse proxy overwrites X-Forwarded-For (e.g. nginx $remote_addr).
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       GIT_COMMIT: ${GIT_COMMIT:-}
       BUILD_DATE: ${BUILD_DATE:-}
     volumes:

@@ -1,23 +1,22 @@
 import jwt from 'jsonwebtoken';
 import { prisma } from './db.js';
 import { httpError } from './errors.js';
-
-const WEAK_JWT_SECRETS = new Set([
-  'local-dev-secret',
-  'docker-dev-secret',
-  'change-me-in-production',
-]);
-
-/** Dev/test fallback only — never used when NODE_ENV=production. */
-const DEV_JWT_FALLBACK = 'local-dev-secret';
+import {
+  DEV_JWT_FALLBACK,
+  WEAK_JWT_SECRETS,
+  assessJwtSecretStrength,
+} from './jwtSecret.js';
 
 export function resolveJwtSecret() {
   const secret = process.env.JWT_SECRET;
   const isProd = process.env.NODE_ENV === 'production';
 
   if (isProd) {
-    if (!secret || WEAK_JWT_SECRETS.has(secret)) {
-      throw new Error('JWT_SECRET production için zorunlu ve güvenli olmalıdır');
+    const assessment = assessJwtSecretStrength(secret);
+    if (!assessment.ok) {
+      throw new Error(
+        assessment.reason || 'JWT_SECRET production için zorunlu ve güvenli olmalıdır'
+      );
     }
     return secret;
   }
@@ -97,10 +96,10 @@ export function publicUser(user) {
 
 export function clientMeta(req) {
   return {
-    ip: req.ip || req.headers['x-forwarded-for'] || null,
+    ip: req.ip || null,
     userAgent: req.headers['user-agent'] || null,
     requestId: req.requestId || null,
   };
 }
 
-export { WEAK_JWT_SECRETS };
+export { WEAK_JWT_SECRETS, assessJwtSecretStrength };

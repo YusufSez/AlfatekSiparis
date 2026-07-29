@@ -3,7 +3,13 @@
  * Development and test keep permissive defaults.
  */
 import { WEAK_JWT_SECRETS, resolveJwtSecret } from './auth.js';
+import { assessJwtSecretStrength } from './jwtSecret.js';
 import { logger } from './logger.js';
+
+function trustProxyEnabled() {
+  const v = String(process.env.TRUST_PROXY || '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
 
 export function assertProductionSecurityConfig() {
   const isProd = process.env.NODE_ENV === 'production';
@@ -12,6 +18,15 @@ export function assertProductionSecurityConfig() {
       logger.warn('JWT_SECRET tanımlı değil; local-dev-secret kullanılıyor');
     }
     return;
+  }
+
+  // Never allow dotenv override files that might ship with known secrets.
+  if (process.env.DOTENV_CONFIG_PATH) {
+    const path = String(process.env.DOTENV_CONFIG_PATH).replace(/\\/g, '/').toLowerCase();
+    if (path.endsWith('.env.development') || path.includes('/.env.development')) {
+      logger.error('Production’da .env.development kullanılamaz');
+      process.exit(1);
+    }
   }
 
   try {
@@ -35,8 +50,15 @@ export function assertProductionSecurityConfig() {
   }
 
   const metricsToken = String(process.env.METRICS_TOKEN || '').trim();
-  if (!metricsToken || WEAK_JWT_SECRETS.has(metricsToken)) {
-    logger.error('METRICS_TOKEN production için zorunlu ve tahmin edilemez olmalıdır');
+  const metricsCheck = assessJwtSecretStrength(metricsToken);
+  if (!metricsToken || WEAK_JWT_SECRETS.has(metricsToken) || !metricsCheck.ok) {
+    logger.error('METRICS_TOKEN production için zorunlu, uzun ve tahmin edilemez olmalıdır');
     process.exit(1);
+  }
+
+  if (trustProxyEnabled()) {
+    logger.info('trust proxy etkin (TRUST_PROXY) — reverse proxy X-Forwarded-For overwrite etmeli');
+  } else {
+    logger.info('trust proxy kapalı — istemci X-Forwarded-For yok sayılır');
   }
 }

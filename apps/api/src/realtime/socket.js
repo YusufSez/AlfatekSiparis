@@ -3,6 +3,12 @@ import { verifyToken } from '../common/auth.js';
 import { prisma } from '../common/db.js';
 import { logger } from '../common/logger.js';
 import { buildSocketCorsOrigin } from '../common/corsOrigin.js';
+import {
+  claimSocketHandshake,
+  getSocketClientIp,
+  trackSocketConnected,
+  trackSocketDisconnected,
+} from '../common/socketRateLimit.js';
 import { notificationService } from '../modules/notifications/notification.service.js';
 import { presenceService } from '../modules/presence/presence.service.js';
 import { getPresenceForOffice } from '../modules/orders/orders.domain.js';
@@ -14,6 +20,17 @@ export function createSocketServer(httpServer, corsOrigin) {
       origin: buildSocketCorsOrigin(corsOrigin),
       methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'],
       credentials: true,
+    },
+    allowRequest(req, callback) {
+      const ip = getSocketClientIp(req);
+      const claim = claimSocketHandshake(ip);
+      if (!claim.ok) {
+        logger.warn('socket.handshake_rejected', { ip, reason: claim.reason });
+        callback('Too many connections', false);
+        return;
+      }
+      req._socketRateIp = ip;
+      callback(null, true);
     },
   });
 
@@ -28,6 +45,8 @@ export function createSocketServer(httpServer, corsOrigin) {
       if (!user || !user.active || user.deletedAt) return next(new Error('Yetkisiz'));
       if ((payload.tv ?? 0) !== (user.tokenVersion ?? 0)) return next(new Error('Yetkisiz'));
       socket.user = user;
+      socket.clientIp =
+        socket.request?._socketRateIp || getSocketClientIp(socket.request);
       next();
     } catch {
       next(new Error('Yetkisiz'));
@@ -36,6 +55,9 @@ export function createSocketServer(httpServer, corsOrigin) {
 
   io.on('connection', async (socket) => {
     const user = socket.user;
+    const ip = socket.clientIp || 'unknown';
+    trackSocketConnected(ip);
+
     socket.join(`user:${user.id}`);
     if (user.officeId) socket.join(`office:${user.officeId}`);
     if (user.role === 'kitchen' || user.role === 'admin') socket.join('kitchen');
@@ -60,6 +82,7 @@ export function createSocketServer(httpServer, corsOrigin) {
     logger.info('socket.connected', { userId: user.id, socketId: socket.id });
 
     socket.on('disconnect', async () => {
+      trackSocketDisconnected(ip);
       const officeId = await presenceService.removeSocket(socket.id);
       if (officeId) {
         const users = await getPresenceForOffice(officeId);

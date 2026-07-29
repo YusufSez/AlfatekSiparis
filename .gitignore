@@ -4,6 +4,8 @@ build/
 .env
 .env.local
 .env.*.local
+.env.development
+apps/api/.env.development
 *.db
 *.db-journal
 .DS_Store
