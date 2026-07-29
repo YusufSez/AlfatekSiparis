@@ -73,6 +73,27 @@ async function sendToSubscription(row, payload) {
     return { ok: true, userId: row.userId, status: 201 };
   } catch (err) {
     const status = err?.statusCode;
+    // Debug: capture full Apple / push-service rejection (do not change control flow)
+    logger.warn('push.send_error_detail', {
+      userId: row.userId,
+      endpoint: row.endpoint.slice(0, 64),
+      event: payload?.event || null,
+      tag: payload?.tag || null,
+      statusCode: status ?? null,
+      message: err?.message || String(err),
+      stack: err?.stack || null,
+      headers: err?.headers ?? null,
+      body: err?.body ?? null,
+      response: err?.response
+        ? {
+            statusCode: err.response.statusCode ?? err.response.status ?? null,
+            headers: err.response.headers ?? null,
+            body: err.response.body ?? null,
+          }
+        : null,
+      name: err?.name || null,
+      code: err?.code ?? null,
+    });
     // Gone / invalid / unauthorized — drop stale endpoints (incl. iOS expiry quirks)
     if (status === 404 || status === 410 || status === 400 || status === 401 || status === 403) {
       await prisma.pushSubscription.deleteMany({ where: { endpoint: row.endpoint } });
