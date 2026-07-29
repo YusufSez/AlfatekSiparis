@@ -7,6 +7,7 @@ import {
   authMiddleware,
   clientMeta,
   publicUser,
+  requirePasswordChanged,
   signToken,
 } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
@@ -88,7 +89,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 });
 
 /** Profil istatistikleri — salt okunur, iş kurallarını değiştirmez; role göre alanlar değişir */
-router.get('/profile', authMiddleware, async (req, res, next) => {
+router.get('/profile', authMiddleware, requirePasswordChanged, async (req, res, next) => {
   try {
     const userId = req.user.id;
     const role = req.user.role;
@@ -243,6 +244,7 @@ router.post('/password', authMiddleware, async (req, res, next) => {
       data: {
         passwordHash: await bcrypt.hash(parsed.data.newPassword, 10),
         tokenVersion: { increment: 1 },
+        mustChangePassword: false,
       },
       include: { office: true },
     });
@@ -285,7 +287,7 @@ function handleAvatarMulter(req, res, next) {
 }
 
 /** Own avatar only — authenticated user cannot change another user's photo. */
-router.post('/avatar', authMiddleware, handleAvatarMulter, async (req, res, next) => {
+router.post('/avatar', authMiddleware, requirePasswordChanged, handleAvatarMulter, async (req, res, next) => {
   try {
     if (!req.file?.buffer) {
       throw httpError(400, 'Lütfen bir görsel seçin.');
@@ -313,7 +315,7 @@ router.post('/avatar', authMiddleware, handleAvatarMulter, async (req, res, next
   }
 });
 
-router.delete('/avatar', authMiddleware, async (req, res, next) => {
+router.delete('/avatar', authMiddleware, requirePasswordChanged, async (req, res, next) => {
   try {
     const previousUrl = req.user.avatarUrl || null;
     const user = await prisma.user.update({

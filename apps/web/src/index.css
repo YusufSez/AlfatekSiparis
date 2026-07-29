@@ -3959,8 +3959,11 @@ html[data-theme='dark'] .stack-form textarea {
 
 .menu-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
   gap: 0.85rem;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .menu-product-card {
@@ -3971,6 +3974,10 @@ html[data-theme='dark'] .stack-form textarea {
   display: grid;
   gap: 0.75rem;
   box-shadow: var(--shadow);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .menu-product-card.is-passive {
@@ -3981,6 +3988,20 @@ html[data-theme='dark'] .stack-form textarea {
   display: flex;
   align-items: flex-start;
   gap: 0.65rem;
+  min-width: 0;
+}
+
+.menu-product-top > div:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.menu-product-top strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .menu-product-top .muted {
@@ -4476,13 +4497,25 @@ html[data-theme='dark'] .stack-form textarea {
 }
 
 .menu-product-card.pro {
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
 }
 
 .menu-product-body {
   display: grid;
   gap: 0.55rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.menu-product-body .compact-select,
+.menu-product-body .row-actions {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.menu-product-body .row-actions .btn {
+  max-width: 100%;
 }
 
 .label-with-tip {
@@ -4521,13 +4554,31 @@ html[data-theme='dark'] .stack-form textarea {
   font-weight: 600;
   padding: 0.35rem 0.55rem;
   border-radius: 8px;
-  white-space: nowrap;
   z-index: 30;
   transition: opacity 0.18s ease, transform 0.18s ease;
+  max-width: min(280px, calc(100vw - 1.5rem));
+  white-space: normal;
 }
 
-.tooltip-wrap:hover .tooltip-bubble,
-.tooltip-wrap:focus-within .tooltip-bubble {
+.tooltip-bubble--portal {
+  position: fixed;
+  bottom: auto;
+  z-index: 10050;
+  opacity: 1;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 4px));
+}
+
+.tooltip-bubble--portal.place-below {
+  transform: translate(-50%, 4px);
+}
+
+.tooltip-bubble--portal.is-open {
+  opacity: 1;
+}
+
+.tooltip-wrap:hover .tooltip-bubble:not(.tooltip-bubble--portal),
+.tooltip-wrap:focus-within .tooltip-bubble:not(.tooltip-bubble--portal) {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }

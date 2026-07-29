@@ -7,6 +7,7 @@ import {
   clientMeta,
   publicUser,
   requireRoles,
+  requirePasswordChanged,
 } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
 import { safeJsonParse } from '../../common/safeJson.js';
@@ -14,6 +15,7 @@ import { getSettings, writeAudit, notifyUsers, getPresenceForOffice } from '../o
 import { getDashboardStats, globalSearch } from './admin.analytics.js';
 import { deleteAvatarFile } from '../../common/avatarStorage.js';
 import { notificationService } from '../notifications/notification.service.js';
+import { DEFAULT_USER_PASSWORD } from '../../common/passwords.js';
 
 async function notifyOtherAdmins(actorId, { title, body, event, payload }) {
   const admins = await prisma.user.findMany({
@@ -27,7 +29,7 @@ async function notifyOtherAdmins(actorId, { title, body, event, payload }) {
 }
 
 const router = Router();
-router.use(authMiddleware, requireRoles('admin'));
+router.use(authMiddleware, requireRoles('admin'), requirePasswordChanged);
 
 router.get('/dashboard', async (_req, res, next) => {
   try {
@@ -125,7 +127,6 @@ router.post('/users', async (req, res, next) => {
       .object({
         name: z.string().min(1),
         username: z.string().min(2),
-        password: z.string().min(8),
         role: z.enum(['admin', 'office_user', 'kitchen']),
         officeId: z.string().nullable().optional(),
         active: z.boolean().optional(),
@@ -139,10 +140,11 @@ router.post('/users', async (req, res, next) => {
       data: {
         name: parsed.data.name.trim(),
         username: parsed.data.username.trim().toLowerCase(),
-        passwordHash: await bcrypt.hash(parsed.data.password, 10),
+        passwordHash: await bcrypt.hash(DEFAULT_USER_PASSWORD, 10),
         role: parsed.data.role,
         officeId: parsed.data.role === 'office_user' ? parsed.data.officeId : null,
         active: parsed.data.active ?? true,
+        mustChangePassword: true,
       },
       include: { office: true },
     });
@@ -182,6 +184,7 @@ router.patch('/users/:id', async (req, res, next) => {
     if (parsed.data.password) {
       data.passwordHash = await bcrypt.hash(parsed.data.password, 10);
       data.tokenVersion = { increment: 1 };
+      data.mustChangePassword = true;
     }
     if (parsed.data.role) data.role = parsed.data.role;
     if (parsed.data.active !== undefined) data.active = parsed.data.active;

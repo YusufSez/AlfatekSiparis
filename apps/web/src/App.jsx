@@ -7,6 +7,7 @@ import OfficePage from './pages/OfficePage';
 import KitchenPage from './pages/KitchenPage';
 import ProfilePage from './pages/ProfilePage';
 import ForbiddenPage from './pages/ForbiddenPage';
+import ForcePasswordChangePage from './pages/ForcePasswordChangePage';
 
 const AdminLoginPage = lazy(() => import('./pages/AdminLoginPage'));
 const AdminLayout = lazy(() => import('./components/admin/AdminLayout'));
@@ -103,6 +104,10 @@ export default function App() {
   const { user, loading } = useAuth();
 
   if (loading) return <BootFallback />;
+
+  if (user?.mustChangePassword) {
+    return <ForcePasswordChangePage />;
+  }
 
   return (
     <Routes>

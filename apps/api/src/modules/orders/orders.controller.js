@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { authMiddleware, clientMeta, requireRoles } from '../../common/auth.js';
+import { authMiddleware, clientMeta, requireRoles, requirePasswordChanged } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
 import { safeJsonParse } from '../../common/safeJson.js';
 import {
@@ -21,7 +21,7 @@ import { prisma } from '../../common/db.js';
 
 const router = Router();
 
-router.use(authMiddleware);
+router.use(authMiddleware, requirePasswordChanged);
 
 router.post('/staff-call', requireRoles('office_user'), async (req, res, next) => {
   try {

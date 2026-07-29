@@ -78,6 +78,14 @@ export function requireRoles(...roles) {
   };
 }
 
+/** Block app APIs until the user completes a required password change. */
+export function requirePasswordChanged(req, _res, next) {
+  if (req.user?.mustChangePassword) {
+    return next(httpError(403, 'Önce şifrenizi değiştirmelisiniz'));
+  }
+  next();
+}
+
 export function publicUser(user) {
   return {
     id: user.id,
@@ -90,6 +98,7 @@ export function publicUser(user) {
       : null,
     avatarUrl: user.avatarUrl || null,
     active: user.active,
+    mustChangePassword: Boolean(user.mustChangePassword),
     createdAt: user.createdAt || null,
   };
 }

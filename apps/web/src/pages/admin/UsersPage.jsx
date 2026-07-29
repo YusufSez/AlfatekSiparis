@@ -59,7 +59,6 @@ export default function UsersPage() {
         body: {
           name: fd.get('name'),
           username: fd.get('username'),
-          password: fd.get('password'),
           role,
           officeId: role === 'office_user' ? fd.get('officeId') || null : null,
         },
@@ -216,10 +215,9 @@ export default function UsersPage() {
           Kullanıcı adı
           <input name="username" required autoComplete="off" />
         </label>
-        <label>
-          Şifre
-          <input name="password" type="password" minLength={8} required autoComplete="new-password" />
-        </label>
+        <p className="field-hint">
+          İlk şifre: <strong>Alfatek2026.</strong> — kullanıcı ilk girişte zorunlu olarak değiştirecek.
+        </p>
         <label>
           Rol
           <select name="role" value={userRole} onChange={(e) => setUserRole(e.target.value)}>
@@ -333,6 +331,9 @@ export default function UsersPage() {
                 required
               />
             </label>
+            <p className="field-hint">
+              Kullanıcı bir sonraki girişte bu şifreyi değiştirmek zorunda kalacak.
+            </p>
           </form>
         )}
       </Modal>

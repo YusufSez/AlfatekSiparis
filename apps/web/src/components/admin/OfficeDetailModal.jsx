@@ -310,6 +310,9 @@ export default function OfficeDetailModal({ office, onClose, onEdit }) {
                 required
               />
             </label>
+            <p className="field-hint">
+              Kullanıcı bir sonraki girişte bu şifreyi değiştirmek zorunda kalacak.
+            </p>
           </form>
         )}
       </Modal>

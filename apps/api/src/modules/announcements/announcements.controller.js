@@ -5,6 +5,7 @@ import {
   authMiddleware,
   clientMeta,
   requireRoles,
+  requirePasswordChanged,
 } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
 import { SocketEvents } from '../../common/sessionEventType.js';
@@ -60,7 +61,7 @@ async function broadcast() {
   }
 }
 
-router.get('/active', authMiddleware, async (_req, res, next) => {
+router.get('/active', authMiddleware, requirePasswordChanged, async (_req, res, next) => {
   try {
     res.json({ announcements: await listActiveAnnouncements() });
   } catch (err) {
@@ -68,7 +69,7 @@ router.get('/active', authMiddleware, async (_req, res, next) => {
   }
 });
 
-router.use(authMiddleware, requireRoles('admin'));
+router.use(authMiddleware, requireRoles('admin'), requirePasswordChanged);
 
 router.get('/', async (_req, res, next) => {
   try {

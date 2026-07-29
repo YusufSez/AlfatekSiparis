@@ -17,13 +17,22 @@ export function configureVapid() {
     vapidReady = false;
     return false;
   }
-  webpush.setVapidDetails(email.startsWith('mailto:') ? email : `mailto:${email}`, publicKey, privateKey);
-  vapidReady = true;
-  logger.info('push.vapid_configured', {
-    message: 'VAPID configured',
-    publicKeyLength: publicKey.length,
-  });
-  return true;
+  try {
+    webpush.setVapidDetails(email.startsWith('mailto:') ? email : `mailto:${email}`, publicKey, privateKey);
+    vapidReady = true;
+    logger.info('push.vapid_configured', {
+      message: 'VAPID configured',
+      publicKeyLength: publicKey.length,
+    });
+    return true;
+  } catch (err) {
+    logger.warn('push.vapid_invalid', {
+      message: 'VAPID keys rejected',
+      detail: err?.message || String(err),
+    });
+    vapidReady = false;
+    return false;
+  }
 }
 
 export function getVapidPublicKey() {

@@ -1,11 +1,11 @@
 import { Router } from 'express';
-import { authMiddleware } from '../../common/auth.js';
+import { authMiddleware, requirePasswordChanged } from '../../common/auth.js';
 import { prisma } from '../../common/db.js';
 import { getSettings } from '../orders/orders.domain.js';
 
 const router = Router();
 
-router.get('/', authMiddleware, async (_req, res, next) => {
+router.get('/', authMiddleware, requirePasswordChanged, async (_req, res, next) => {
   try {
     const items = await prisma.menuItem.findMany({
       where: { active: true },
@@ -17,7 +17,7 @@ router.get('/', authMiddleware, async (_req, res, next) => {
   }
 });
 
-router.get('/settings/public', authMiddleware, async (_req, res, next) => {
+router.get('/settings/public', authMiddleware, requirePasswordChanged, async (_req, res, next) => {
   try {
     const settings = await getSettings();
     res.json({

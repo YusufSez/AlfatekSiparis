@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../common/db.js';
-import { authMiddleware, requireRoles } from '../../common/auth.js';
+import { authMiddleware, requireRoles, requirePasswordChanged } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
 import { logger } from '../../common/logger.js';
 import { notificationService } from './notification.service.js';
@@ -46,7 +46,7 @@ router.get('/push/vapid-public-key', async (_req, res) => {
   res.json({ publicKey: key, configured: true });
 });
 
-router.use(authMiddleware);
+router.use(authMiddleware, requirePasswordChanged);
 
 router.get('/', async (req, res, next) => {
   try {

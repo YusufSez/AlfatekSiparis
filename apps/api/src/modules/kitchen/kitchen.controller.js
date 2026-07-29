@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { prisma } from '../../common/db.js';
-import { authMiddleware, clientMeta, requireRoles } from '../../common/auth.js';
+import { authMiddleware, clientMeta, requireRoles, requirePasswordChanged } from '../../common/auth.js';
 import { httpError } from '../../common/errors.js';
 import { serializeTicket, updateTicketStatus, reportTicketUnavailable } from '../orders/orders.domain.js';
 
 const router = Router();
-router.use(authMiddleware, requireRoles('kitchen', 'admin'));
+router.use(authMiddleware, requireRoles('kitchen', 'admin'), requirePasswordChanged);
 
 router.get('/tickets', async (req, res, next) => {
   try {
