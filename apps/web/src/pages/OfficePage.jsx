@@ -1165,14 +1165,16 @@ export default function OfficePage() {
                         <span>Sipariş aç</span>
                       </button>
                     </div>
-                    <button
-                      type="button"
-                      className="btn outline pressable staff-call-btn"
-                      disabled={busy || staffCallBusy || staffCallOnCooldown}
-                      onClick={callStaff}
-                    >
-                      Cemile Ablayı Çağır
-                    </button>
+                    <div className="order-success-cta">
+                      <button
+                        type="button"
+                        className="btn outline pressable staff-call-btn"
+                        disabled={busy || staffCallBusy || staffCallOnCooldown}
+                        onClick={callStaff}
+                      >
+                        Cemile Ablayı Çağır
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <OrderHistoryAccordion entries={orderHistory} />
@@ -1270,14 +1272,16 @@ export default function OfficePage() {
                           <span>Yeni sipariş aç</span>
                         </button>
                       </div>
-                      <button
-                        type="button"
-                        className="btn outline pressable staff-call-btn"
-                        disabled={busy || staffCallBusy || staffCallOnCooldown}
-                        onClick={callStaff}
-                      >
-                        Cemile Ablayı Çağır
-                      </button>
+                      <div className="order-success-cta">
+                        <button
+                          type="button"
+                          className="btn outline pressable staff-call-btn"
+                          disabled={busy || staffCallBusy || staffCallOnCooldown}
+                          onClick={callStaff}
+                        >
+                          Cemile Ablayı Çağır
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
