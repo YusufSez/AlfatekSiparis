@@ -30,12 +30,16 @@ VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
 VAPID_EMAIL=mailto:admin@YOUR-DOMAIN
 
-# /metrics scrape token (uzun, tahmin edilemez)
+# Metrics scrape token (uzun, tahmin edilemez)
 METRICS_TOKEN=
 
 # Render reverse proxy arkasında önerilir
 TRUST_PROXY=1
 TRUST_PROXY_HOPS=1
+
+# Tek kullanıcı / kendi telefonuna push testi: opener da bildirim alır
+# (false = yalnız ofis peer’ları — varsayılan)
+# NOTIFY_SELF_ON_OPEN=true
 
 # Opsiyonel metadata
 # GIT_COMMIT=

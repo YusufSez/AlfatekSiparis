@@ -186,17 +186,33 @@ function friendlySubscribeError(err) {
 }
 
 export async function subscribePush() {
-  if (!isPushSupported()) throw new Error('Bu tarayıcı push bildirimini desteklemiyor');
-  if (!wantsPushOnThisDevice()) throw new Error('Bu cihaz türü için bildirimler kapalı');
+  if (!isPushSupported()) {
+    console.warn('[push] subscribe skipped — not supported');
+    throw new Error('Bu tarayıcı push bildirimini desteklemiyor');
+  }
+  if (!wantsPushOnThisDevice()) {
+    console.warn('[push] subscribe skipped — device pref off');
+    throw new Error('Bu cihaz türü için bildirimler kapalı');
+  }
 
   const permission = await Notification.requestPermission();
-  if (permission !== 'granted') throw new Error('Bildirim izni verilmedi');
+  console.info('[push] permission', { permission });
+  if (permission !== 'granted') {
+    console.warn('[push] subscribe failed — permission denied');
+    throw new Error('Bildirim izni verilmedi');
+  }
 
   const reg = await ensureServiceWorker();
-  if (!reg?.pushManager) throw new Error('Service worker hazır değil');
+  if (!reg?.pushManager) {
+    console.error('[push] subscribe failed — no PushManager');
+    throw new Error('Service worker hazır değil');
+  }
 
   const publicKey = await getVapidPublicKey();
-  if (!publicKey) throw new Error('VAPID anahtarı yapılandırılmamış');
+  if (!publicKey) {
+    console.error('[push] subscribe failed — no VAPID public key');
+    throw new Error('VAPID anahtarı yapılandırılmamış');
+  }
 
   const applicationServerKey = urlBase64ToUint8Array(publicKey);
 
@@ -204,8 +220,13 @@ export async function subscribePush() {
   if (sub) {
     const existing = sub.toJSON();
     if (!existing?.keys?.p256dh || !existing?.keys?.auth) {
+      console.warn('[push] existing subscription missing keys — unsubscribing');
       await sub.unsubscribe();
       sub = null;
+    } else {
+      console.info('[push] reusing existing PushManager subscription', {
+        endpoint: String(existing.endpoint || '').slice(0, 48),
+      });
     }
   }
 
@@ -215,24 +236,33 @@ export async function subscribePush() {
         userVisibleOnly: true,
         applicationServerKey,
       });
+      console.info('[push] PushManager.subscribe ok');
     } catch (err) {
+      console.error('[push] PushManager.subscribe failed', err?.message || err);
       throw new Error(friendlySubscribeError(err));
     }
   }
 
   const json = sub.toJSON();
   if (!json?.endpoint || !json?.keys?.p256dh || !json?.keys?.auth) {
+    console.error('[push] subscription keys incomplete');
     throw new Error('Tarayıcı subscription anahtarları eksik');
   }
 
-  await api('/notifications/push/subscribe', {
-    method: 'POST',
-    body: {
-      endpoint: json.endpoint,
-      keys: json.keys,
-      expirationTime: json.expirationTime ?? null,
-    },
-  });
+  try {
+    await api('/notifications/push/subscribe', {
+      method: 'POST',
+      body: {
+        endpoint: json.endpoint,
+        keys: json.keys,
+        expirationTime: json.expirationTime ?? null,
+      },
+    });
+  } catch (err) {
+    console.error('[push] endpoint save failed', err?.message || err);
+    throw err;
+  }
+
   setPushPrefForThisDevice(true);
   console.info('[push] subscription saved', {
     endpoint: String(json.endpoint).slice(0, 48),
@@ -248,24 +278,33 @@ export async function unsubscribePush({ clearPref = true } = {}) {
     setPushPrefForThisDevice(false);
   }
 
-  if (!isPushSupported()) return;
+  if (!isPushSupported()) {
+    console.info('[push] unsubscribe skipped — not supported');
+    return;
+  }
   const reg = await ensureServiceWorker();
   const sub = await reg?.pushManager?.getSubscription();
   const endpoint = sub?.endpoint;
   if (sub) {
     try {
       await sub.unsubscribe();
-    } catch {
-      /* ignore */
+      console.info('[push] PushManager.unsubscribe ok', {
+        endpoint: String(endpoint || '').slice(0, 48),
+      });
+    } catch (err) {
+      console.warn('[push] PushManager.unsubscribe failed', err?.message || err);
     }
+  } else {
+    console.info('[push] unsubscribe — no local subscription');
   }
   try {
     await api('/notifications/push/unsubscribe', {
       method: 'DELETE',
       body: endpoint ? { endpoint } : {},
     });
-  } catch {
-    /* ignore if logged out */
+    console.info('[push] server unsubscribe ok');
+  } catch (err) {
+    console.warn('[push] server unsubscribe failed', err?.message || err);
   }
 }
 
@@ -278,11 +317,24 @@ export async function sendTestPush() {
  * Notification.permission === 'granted' alone must not re-subscribe.
  */
 export async function syncPushAfterLogin() {
-  if (!isPushSupported() || !wantsPushOnThisDevice()) return;
-  if (Notification.permission !== 'granted') return;
+  if (!isPushSupported()) {
+    console.info('[push] syncAfterLogin skipped — not supported');
+    return;
+  }
+  if (!wantsPushOnThisDevice()) {
+    console.info('[push] syncAfterLogin skipped — device pref off');
+    return;
+  }
+  if (Notification.permission !== 'granted') {
+    console.info('[push] syncAfterLogin skipped — permission', {
+      permission: Notification.permission,
+    });
+    return;
+  }
   try {
     await subscribePush();
-  } catch {
-    /* silent — user can enable from profile */
+    console.info('[push] syncAfterLogin success');
+  } catch (err) {
+    console.error('[push] syncAfterLogin failed', err?.message || err);
   }
 }

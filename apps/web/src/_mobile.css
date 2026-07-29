@@ -754,6 +754,16 @@ html[data-theme='dark'] .announce-banner.sev-critical {
 
 /* ── Narrow phone audit: 320 / 375 / 430 ───────────────────────── */
 @media (max-width: 430px) {
+  /* Portal bottom nav — keep above content; never clip under page overflow */
+  .app-bottom-nav {
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    z-index: 50;
+  }
+
   .app-shell-header,
   .app-nav {
     padding-left: max(0.65rem, env(safe-area-inset-left, 0px));

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useSocketApi, useSocketReconnectKey } from '../lib/socket';
+import { useStaffCalls } from '../lib/staffCallStore';
 import { useConfirm } from '../lib/confirm';
 import { useToast } from '../lib/toast';
 import AppHeader from '../components/AppHeader';
@@ -101,63 +102,6 @@ function OfficeBanner({ office }) {
   );
 }
 
-const STAFF_CALL_TTL_MS = 10 * 60 * 1000;
-
-function parseStaffCallPayload(payload) {
-  let p = payload;
-  if (typeof p === 'string') {
-    try {
-      p = JSON.parse(p);
-    } catch {
-      p = {};
-    }
-  }
-  return p && typeof p === 'object' ? p : {};
-}
-
-function staffCallFromSocket(payload) {
-  const p = parseStaffCallPayload(payload);
-  const at = p.calledAt || new Date().toISOString();
-  const officeId = p.officeId || `unknown-${at}`;
-  return {
-    id: `live-${officeId}-${at}`,
-    officeId,
-    officeName: p.officeName || 'Ofis',
-    title: p.title || 'Cemile Abla',
-    body: p.body || `${p.officeName || 'Ofis'} sizi bekliyor.`,
-    at,
-  };
-}
-
-function staffCallFromNotification(n) {
-  const p = parseStaffCallPayload(n.payload);
-  const at = p.calledAt || n.createdAt || new Date().toISOString();
-  const officeId = p.officeId || n.id;
-  return {
-    id: n.id || `note-${officeId}-${at}`,
-    officeId,
-    officeName: p.officeName || 'Ofis',
-    title: n.title || 'Cemile Abla',
-    body: n.body || `${p.officeName || 'Ofis'} sizi bekliyor.`,
-    at,
-  };
-}
-
-function mergeStaffCalls(prev, incoming) {
-  const byOffice = new Map();
-  for (const c of [...prev, ...incoming]) {
-    if (!c?.officeId) continue;
-    const existing = byOffice.get(c.officeId);
-    if (!existing || new Date(c.at).getTime() >= new Date(existing.at).getTime()) {
-      byOffice.set(c.officeId, c);
-    }
-  }
-  const cutoff = Date.now() - STAFF_CALL_TTL_MS;
-  return [...byOffice.values()]
-    .filter((c) => new Date(c.at).getTime() >= cutoff)
-    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-}
-
 function formatStaffCallTime(iso) {
   try {
     return new Date(iso).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
@@ -238,6 +182,7 @@ export default function KitchenPage() {
   const { logout } = useAuth();
   const { on } = useSocketApi();
   const reconnectKey = useSocketReconnectKey();
+  const { calls: staffCalls, hydrateFromNotifications, dismiss: dismissStaffCall } = useStaffCalls();
   const { confirm: confirmDialog } = useConfirm();
   const toast = useToast();
   const [tickets, setTickets] = useState([]);
@@ -252,8 +197,6 @@ export default function KitchenPage() {
   const [shortageSelected, setShortageSelected] = useState({});
   const [shortageNote, setShortageNote] = useState('');
   const [shortageBusy, setShortageBusy] = useState(false);
-  const [staffCalls, setStaffCalls] = useState([]);
-  const dismissedStaffCallsRef = useRef(new Set());
   const inFlightRef = useRef(new Set());
   /** Latest kitchen:updated received while a ticket PATCH was in flight */
   const pendingSocketRef = useRef(new Map());
@@ -280,16 +223,6 @@ export default function KitchenPage() {
   useEffect(() => {
     ticketsRef.current = tickets;
   }, [tickets]);
-
-  // Drop expired staff-call cards without a refresh
-  useEffect(() => {
-    if (!staffCalls.length) return undefined;
-    const id = setInterval(() => {
-      const cutoff = Date.now() - STAFF_CALL_TTL_MS;
-      setStaffCalls((prev) => prev.filter((c) => new Date(c.at).getTime() >= cutoff));
-    }, 30_000);
-    return () => clearInterval(id);
-  }, [staffCalls.length]);
 
   const applyTicketUpdate = useCallback((ticket) => {
     if (!ticket?.id) return;
@@ -346,22 +279,19 @@ export default function KitchenPage() {
     setHistory(hist.tickets || []);
   }, []);
 
-  const hydrateStaffCalls = useCallback(async (signal) => {
-    try {
-      const data = await api('/notifications?take=40', { signal });
-      if (signal?.aborted) return;
-      const cutoff = Date.now() - STAFF_CALL_TTL_MS;
-      const fresh = (data.notifications || [])
-        .filter((n) => n.event === 'kitchen:staff_call' && !n.readAt)
-        .map(staffCallFromNotification)
-        .filter((c) => new Date(c.at).getTime() >= cutoff)
-        .filter((c) => !dismissedStaffCallsRef.current.has(c.officeId));
-      setStaffCalls((prev) => mergeStaffCalls(prev, fresh));
-    } catch (err) {
-      if (err?.name === 'AbortError' || signal?.aborted) return;
-      /* non-fatal */
-    }
-  }, []);
+  const hydrateStaffCalls = useCallback(
+    async (signal) => {
+      try {
+        const data = await api('/notifications?take=40', { signal });
+        if (signal?.aborted) return;
+        hydrateFromNotifications(data.notifications || []);
+      } catch (err) {
+        if (err?.name === 'AbortError' || signal?.aborted) return;
+        /* non-fatal */
+      }
+    },
+    [hydrateFromNotifications]
+  );
 
   const load = useCallback(
     async (signal) => {
@@ -403,44 +333,16 @@ export default function KitchenPage() {
   }, [load, reconnectKey]);
 
   useEffect(() => {
-    function upsertStaffCall(raw) {
-      const call = staffCallFromSocket(raw);
-      if (!call?.officeId) return;
-      if (dismissedStaffCallsRef.current.has(call.officeId)) {
-        dismissedStaffCallsRef.current.delete(call.officeId);
-      }
-      setStaffCalls((prev) => mergeStaffCalls(prev, [call]));
-      if (navigator.vibrate) navigator.vibrate([100, 40, 100]);
-    }
-
     const offNew = on('kitchen:new_ticket', (ticket) => {
       setTickets((prev) => {
         if (prev.some((t) => t.id === ticket.id)) return prev;
         return [ticket, ...prev];
       });
-      // Special order sound + OS toast → notification:new (playSound)
+      // Order sound + OS toast → notification:new (playSound); not staff-call
       if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
     });
 
-    // Primary board event
-    const offStaffCall = on('kitchen:staff_call', (payload) => {
-      upsertStaffCall(payload);
-    });
-
-    // Fallback: notification:new already reaches kitchen (inbox + sound path proven live).
-    // Use it so the card appears even if the kitchen-room board emit is missed.
-    const offNotif = on('notification:new', (n) => {
-      if (n?.event !== 'kitchen:staff_call') return;
-      upsertStaffCall({
-        officeId: n.payload?.officeId,
-        officeName: n.payload?.officeName,
-        callerId: n.payload?.callerId,
-        callerName: n.payload?.callerName,
-        title: n.title,
-        body: n.body,
-        calledAt: n.payload?.calledAt || n.createdAt,
-      });
-    });
+    // Staff-call cards: StaffCallProvider (notification:new + kitchen:staff_call)
 
     const offUpd = on('kitchen:updated', (ticket) => {
       if (!ticket?.id) return;
@@ -452,8 +354,6 @@ export default function KitchenPage() {
     });
     return () => {
       offNew();
-      offStaffCall();
-      offNotif();
       offUpd();
     };
   }, [on, applyTicketUpdate]);
@@ -599,11 +499,6 @@ export default function KitchenPage() {
   );
 
   const hasPreparing = counts.preparing > 0;
-
-  function dismissStaffCall(call) {
-    if (call?.officeId) dismissedStaffCallsRef.current.add(call.officeId);
-    setStaffCalls((prev) => prev.filter((c) => c.officeId !== call.officeId));
-  }
 
   return (
     <div className="page kitchen kitchen-mobile">

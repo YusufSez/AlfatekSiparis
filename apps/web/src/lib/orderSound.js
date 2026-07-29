@@ -55,8 +55,9 @@ function soundDedupeKey(n) {
 
 function shouldPlayForNotification(notification) {
   const event = notification?.event || '';
-  // Staff call is a separate alert type — never play the order sound for it
+  // Order sound ONLY for new-order events — never staff call or other alerts
   if (event === 'kitchen:staff_call') return false;
+  if (event !== 'session.opened' && event !== 'kitchen:new_ticket') return false;
   return (
     notification?.playSound === true || notification?.payload?.playSound === true
   );

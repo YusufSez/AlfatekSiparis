@@ -107,6 +107,46 @@ describe('SESSION', () => {
     expect(result.status).toBe('sent');
   });
 
+  it('NOTIFY_SELF_ON_OPEN=true iken opener da session.opened bildirimi alır', async () => {
+    const prev = process.env.NOTIFY_SELF_ON_OPEN;
+    process.env.NOTIFY_SELF_ON_OPEN = 'true';
+    try {
+      const t = await token();
+      const before = await prisma.userNotification.count({
+        where: { userId: fixtures.yusuf.id, event: 'session.opened' },
+      });
+      const res = await request(app).post('/sessions').set(authHeader(t)).send({});
+      expect(res.status).toBe(201);
+      const after = await prisma.userNotification.count({
+        where: { userId: fixtures.yusuf.id, event: 'session.opened' },
+      });
+      expect(after).toBe(before + 1);
+    } finally {
+      if (prev === undefined) delete process.env.NOTIFY_SELF_ON_OPEN;
+      else process.env.NOTIFY_SELF_ON_OPEN = prev;
+    }
+  });
+
+  it('NOTIFY_SELF_ON_OPEN kapalıyken opener session.opened almaz', async () => {
+    const prev = process.env.NOTIFY_SELF_ON_OPEN;
+    process.env.NOTIFY_SELF_ON_OPEN = 'false';
+    try {
+      const t = await token();
+      const before = await prisma.userNotification.count({
+        where: { userId: fixtures.yusuf.id, event: 'session.opened' },
+      });
+      const res = await request(app).post('/sessions').set(authHeader(t)).send({});
+      expect(res.status).toBe(201);
+      const after = await prisma.userNotification.count({
+        where: { userId: fixtures.yusuf.id, event: 'session.opened' },
+      });
+      expect(after).toBe(before);
+    } finally {
+      if (prev === undefined) delete process.env.NOTIFY_SELF_ON_OPEN;
+      else process.env.NOTIFY_SELF_ON_OPEN = prev;
+    }
+  });
+
   it('özel istek kaydedilir ve ticketa yazılır', async () => {
     const t = await token();
     const opened = await request(app).post('/sessions').set(authHeader(t)).send({});

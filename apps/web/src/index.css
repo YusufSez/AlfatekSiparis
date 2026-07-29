@@ -447,8 +447,10 @@ select {
     backdrop-filter: blur(12px);
     box-shadow: 0 -6px 24px rgba(0, 0, 0, 0.06);
     box-sizing: border-box;
-    /* Keep bar above iOS home indicator / browser chrome */
-    transform: translateZ(0);
+    /* Portal to document.body — viewport-fixed, not header-relative */
+    margin: 0;
+    width: 100%;
+    max-width: 100vw;
   }
 
   .bottom-nav-link {

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider, useAuth } from './lib/auth';
 import { SocketProvider } from './lib/socket';
+import { StaffCallProvider } from './lib/staffCallStore';
 import { ThemeProvider } from './lib/theme';
 import { ToastProvider } from './lib/toast';
 import { ConfirmProvider } from './lib/confirm';
@@ -33,8 +34,10 @@ createRoot(document.getElementById('root')).render(
             <BrowserRouter>
               <AuthProvider>
                 <SocketProvider>
-                  <OrderSoundPreload />
-                  <App />
+                  <StaffCallProvider>
+                    <OrderSoundPreload />
+                    <App />
+                  </StaffCallProvider>
                 </SocketProvider>
               </AuthProvider>
             </BrowserRouter>

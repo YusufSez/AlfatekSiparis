@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import NotificationCenter from './NotificationCenter';
 import { useAuth } from '../lib/auth';
@@ -20,6 +21,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
   const location = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
   const name = user?.name || '';
 
   const links = [];
@@ -30,6 +32,10 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
   }
   if (user?.role === 'kitchen') links.push({ to: '/kitchen', label: 'Mutfak' });
   links.push({ to: '/profile', label: 'Profil' });
+
+  useEffect(() => {
+    setPortalReady(typeof document !== 'undefined');
+  }, []);
 
   useEffect(() => {
     setMenuOpen(false);
@@ -67,121 +73,129 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
     );
   }
 
+  const bottomNav =
+    portalReady &&
+    createPortal(
+      <nav className="app-bottom-nav" aria-label="Alt gezinme">
+        {links.map((l) => renderNavLink(l, 'bottom-nav-link'))}
+      </nav>,
+      document.body
+    );
+
   return (
-    <header className="app-shell-header" style={accent ? { '--accent': accent } : undefined}>
-      <div className="app-nav">
-        <button
-          type="button"
-          className="nav-brand"
-          onClick={() => navigate(homeFor(user?.role))}
-          aria-label="Ana sayfa"
-        >
-          <img src="/alfatek.png" alt="" width={32} height={32} />
-          <span className="nav-brand-text">Alfatek</span>
-        </button>
-
-        <nav className="nav-links nav-links-desktop" aria-label="Ana menü">
-          {links.map((l) => renderNavLink(l, 'nav-link'))}
-        </nav>
-
-        <div className="nav-actions">
-          <NotificationCenter />
+    <>
+      <header className="app-shell-header" style={accent ? { '--accent': accent } : undefined}>
+        <div className="app-nav">
           <button
             type="button"
-            className="btn ghost theme-toggle"
-            onClick={() => theme.toggle()}
-            aria-label={theme.isDark ? 'Açık temaya geç' : 'Koyu temaya geç'}
-            title={theme.isDark ? 'Açık tema' : 'Koyu tema'}
+            className="nav-brand"
+            onClick={() => navigate(homeFor(user?.role))}
+            aria-label="Ana sayfa"
           >
-            {theme.isDark ? '☀' : '🌙'}
+            <img src="/alfatek.png" alt="" width={32} height={32} />
+            <span className="nav-brand-text">Alfatek</span>
           </button>
 
-          <div className="nav-user-card">
+          <nav className="nav-links nav-links-desktop" aria-label="Ana menü">
+            {links.map((l) => renderNavLink(l, 'nav-link'))}
+          </nav>
+
+          <div className="nav-actions">
+            <NotificationCenter />
             <button
               type="button"
-              className="nav-user nav-user-btn"
-              title={`${name} · ${roleLabel(user?.role)}`}
-              aria-label="Profil"
-              onClick={() => navigate('/profile')}
+              className="btn ghost theme-toggle"
+              onClick={() => theme.toggle()}
+              aria-label={theme.isDark ? 'Açık temaya geç' : 'Koyu temaya geç'}
+              title={theme.isDark ? 'Açık tema' : 'Koyu tema'}
             >
-              <Avatar name={name} avatarUrl={user?.avatarUrl} />
-              <span className="nav-user-meta">
-                <strong>{name}</strong>
-                <small>
-                  {roleLabel(user?.role)}
-                  {user?.office?.name ? ` · ${user.office.name}` : ''}
-                </small>
-              </span>
+              {theme.isDark ? '☀' : '🌙'}
             </button>
-          </div>
 
-          <button type="button" className="btn ghost nav-logout-btn" onClick={onLogout}>
-            <span className="nav-logout-label">Çıkış</span>
-          </button>
-
-          <button
-            type="button"
-            className="btn ghost nav-menu-btn"
-            aria-label={menuOpen ? 'Menüyü kapat' : 'Menüyü aç'}
-            aria-expanded={menuOpen}
-            onClick={() => setMenuOpen((o) => !o)}
-          >
-            {menuOpen ? '✕' : '☰'}
-          </button>
-        </div>
-      </div>
-
-      {menuOpen && (
-        <>
-          <button
-            type="button"
-            className="nav-drawer-backdrop"
-            aria-label="Menüyü kapat"
-            onClick={() => setMenuOpen(false)}
-          />
-          <nav className="nav-drawer" aria-label="Mobil menü">
-            <div className="nav-drawer-top">
-              <div className="nav-drawer-user">
+            <div className="nav-user-card">
+              <button
+                type="button"
+                className="nav-user nav-user-btn"
+                title={`${name} · ${roleLabel(user?.role)}`}
+                aria-label="Profil"
+                onClick={() => navigate('/profile')}
+              >
                 <Avatar name={name} avatarUrl={user?.avatarUrl} />
-                <div>
+                <span className="nav-user-meta">
                   <strong>{name}</strong>
-                  <small className="muted">
+                  <small>
                     {roleLabel(user?.role)}
                     {user?.office?.name ? ` · ${user.office.name}` : ''}
                   </small>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn ghost nav-drawer-close"
-                aria-label="Menüyü kapat"
-                onClick={() => setMenuOpen(false)}
-              >
-                ✕
+                </span>
               </button>
             </div>
-            <div className="nav-drawer-links">
-              {links.map((l) => renderNavLink(l, 'nav-drawer-link'))}
-            </div>
-            <button type="button" className="btn ghost nav-drawer-logout" onClick={onLogout}>
-              Çıkış
-            </button>
-          </nav>
-        </>
-      )}
 
-      {(title || subtitle) && location.pathname !== '/profile' && (
-        <div className="page-title-row">
-          <div className="page-title-inner">
-            {title && <h1>{title}</h1>}
-            {subtitle && <p className="muted">{subtitle}</p>}
+            <button type="button" className="btn ghost nav-logout-btn" onClick={onLogout}>
+              <span className="nav-logout-label">Çıkış</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn ghost nav-menu-btn"
+              aria-label={menuOpen ? 'Menüyü kapat' : 'Menüyü aç'}
+              aria-expanded={menuOpen}
+              onClick={() => setMenuOpen((o) => !o)}
+            >
+              {menuOpen ? '✕' : '☰'}
+            </button>
           </div>
         </div>
-      )}
 
-      <nav className="app-bottom-nav" aria-label="Alt gezinme">
-        {links.map((l) => renderNavLink(l, 'bottom-nav-link'))}
-      </nav>
-    </header>
+        {menuOpen && (
+          <>
+            <button
+              type="button"
+              className="nav-drawer-backdrop"
+              aria-label="Menüyü kapat"
+              onClick={() => setMenuOpen(false)}
+            />
+            <nav className="nav-drawer" aria-label="Mobil menü">
+              <div className="nav-drawer-top">
+                <div className="nav-drawer-user">
+                  <Avatar name={name} avatarUrl={user?.avatarUrl} />
+                  <div>
+                    <strong>{name}</strong>
+                    <small className="muted">
+                      {roleLabel(user?.role)}
+                      {user?.office?.name ? ` · ${user.office.name}` : ''}
+                    </small>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn ghost nav-drawer-close"
+                  aria-label="Menüyü kapat"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="nav-drawer-links">
+                {links.map((l) => renderNavLink(l, 'nav-drawer-link'))}
+              </div>
+              <button type="button" className="btn ghost nav-drawer-logout" onClick={onLogout}>
+                Çıkış
+              </button>
+            </nav>
+          </>
+        )}
+
+        {(title || subtitle) && location.pathname !== '/profile' && (
+          <div className="page-title-row">
+            <div className="page-title-inner">
+              {title && <h1>{title}</h1>}
+              {subtitle && <p className="muted">{subtitle}</p>}
+            </div>
+          </div>
+        )}
+      </header>
+      {bottomNav}
+    </>
   );
 }

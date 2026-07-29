@@ -448,11 +448,17 @@ export async function openSession(user, meta = {}) {
     requestId: meta.requestId,
   });
 
-  // Peers only — opener must not get inbox/sound for own open
+  // Peers by default — opener excluded. NOTIFY_SELF_ON_OPEN=true includes opener
+  // (needed for single-user / "open on desktop, push to own phone" production tests).
+  const notifySelfOnOpen = ['1', 'true', 'yes', 'on'].includes(
+    String(process.env.NOTIFY_SELF_ON_OPEN || '')
+      .trim()
+      .toLowerCase()
+  );
   const peerIds = await activeUserIds({
     officeId: user.officeId,
     role: 'office_user',
-    excludeIds: [user.id],
+    excludeIds: notifySelfOnOpen ? [] : [user.id],
   });
   await notifyUsers(peerIds, {
     title: 'Yeni sipariş',
@@ -464,7 +470,12 @@ export async function openSession(user, meta = {}) {
     playSound: true,
   });
 
-  logger.info('session.opened', { sessionId: session.id, requestId: meta.requestId });
+  logger.info('session.opened', {
+    sessionId: session.id,
+    requestId: meta.requestId,
+    notifySelfOnOpen,
+    notifyCount: peerIds.length,
+  });
   return payload;
 }
 

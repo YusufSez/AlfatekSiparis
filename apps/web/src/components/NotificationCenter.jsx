@@ -44,7 +44,7 @@ export default function NotificationCenter() {
     const off = on('notification:new', (n) => {
       if (!isNotificationEventAllowed(role, n.event)) return;
 
-      // Special in-app sound is independent of inbox / OS toast / push.
+      // Order MP3 only for new-order events (gated inside playOrderNotificationSound)
       playOrderNotificationSound(user?.id, n);
 
       const title = n.title || 'Bildirim';
