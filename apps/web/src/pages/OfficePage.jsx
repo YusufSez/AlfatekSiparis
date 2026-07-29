@@ -6,6 +6,12 @@ import { useCountdown } from '../lib/useCountdown';
 import { useConfirm } from '../lib/confirm';
 import { useToast } from '../lib/toast';
 import { iconMeta } from '../lib/uxLabels';
+import {
+  TURKISH_COFFEE_SWEETNESS,
+  formatOrderedItemLabel,
+  isOtherItem,
+  isTurkishCoffeeItem,
+} from '../lib/menuItemRules';
 import AppHeader from '../components/AppHeader';
 import AnnouncementBanner from '../components/AnnouncementBanner';
 import { Skeleton, LoadError, EmptyState } from '../components/LoadStates';
@@ -60,10 +66,14 @@ function eventLabel(type, actor, payload) {
   switch (type) {
     case 'session.opened':
       return `${who} sipariş açtı`;
-    case 'session.line_upserted':
-      return payload?.note
-        ? `${who}: ${payload.qty}× ${payload.menuItemName} (${payload.note})`
-        : `${who}: ${payload.qty}× ${payload.menuItemName}`;
+    case 'session.line_upserted': {
+      const label = formatOrderedItemLabel(
+        payload?.menuItemName,
+        payload?.icon,
+        payload?.note
+      );
+      return `${who}: ${payload?.qty ?? 0}× ${label}`;
+    }
     case 'session.line_removed':
       return `${who} ${payload.menuItemName} kaldırdı`;
     case 'session.left':
@@ -104,12 +114,13 @@ function groupTimelineEvents(events, { windowMs = 90_000 } = {}) {
       last?.payload?.menuItemId &&
       event.payload?.menuItemId &&
       last.payload.menuItemId === event.payload.menuItemId;
+    const sameNote = (last?.payload?.note || '') === (event.payload?.note || '');
     const closeInTime =
       last?.createdAt &&
       event.createdAt &&
       Math.abs(new Date(event.createdAt).getTime() - new Date(last.createdAt).getTime()) <= windowMs;
 
-    if (last?.type === 'session.line_upserted' && sameActor && sameItem && closeInTime) {
+    if (last?.type === 'session.line_upserted' && sameActor && sameItem && sameNote && closeInTime) {
       grouped[grouped.length - 1] = {
         ...event,
         id: last.id,
@@ -123,10 +134,6 @@ function groupTimelineEvents(events, { windowMs = 90_000 } = {}) {
   }
 
   return grouped;
-}
-
-function isOtherItem(item) {
-  return item?.icon === 'other' || item?.name?.toLocaleLowerCase?.('tr') === 'diğer';
 }
 
 function asSummaryList(summary) {
@@ -436,6 +443,8 @@ export default function OfficePage() {
   const [booting, setBooting] = useState(true);
   const [otherDraft, setOtherDraft] = useState('');
   const [otherOpen, setOtherOpen] = useState(false);
+  const [coffeeDraft, setCoffeeDraft] = useState('');
+  const [coffeeOpen, setCoffeeOpen] = useState(false);
   const [specialDraft, setSpecialDraft] = useState('');
   const [staffCallBusy, setStaffCallBusy] = useState(false);
   const [staffCallOnCooldown, setStaffCallOnCooldown] = useState(false);
@@ -809,7 +818,11 @@ export default function OfficePage() {
     Object.values(displayMyQty).some((v) => (v?.qty || 0) > 0);
   const mySkipped = session?.skippedUsers?.some((u) => u.id === user.id);
   const otherItem = useMemo(() => menu.find(isOtherItem), [menu]);
-  const regularMenu = useMemo(() => menu.filter((item) => !isOtherItem(item)), [menu]);
+  const turkishCoffeeItem = useMemo(() => menu.find(isTurkishCoffeeItem), [menu]);
+  const regularMenu = useMemo(
+    () => menu.filter((item) => !isOtherItem(item) && !isTurkishCoffeeItem(item)),
+    [menu]
+  );
 
   const presenceList = presence.length ? presence : session?.presence || [];
 
@@ -984,6 +997,14 @@ export default function OfficePage() {
       const current = displayMyQty[item.id];
       setOtherDraft(current?.note || '');
       setOtherOpen(true);
+      setCoffeeOpen(false);
+      return;
+    }
+    if (isTurkishCoffeeItem(item)) {
+      const current = displayMyQty[item.id];
+      setCoffeeDraft(current?.note || '');
+      setCoffeeOpen(true);
+      setOtherOpen(false);
       return;
     }
     const qty = displayMyQty[item.id]?.qty || 0;
@@ -1000,6 +1021,18 @@ export default function OfficePage() {
     const qty = displayMyQty[otherItem.id]?.qty || 0;
     await setQty(otherItem.id, Math.max(1, qty), note);
     setOtherOpen(false);
+  }
+
+  async function saveTurkishCoffee() {
+    if (!turkishCoffeeItem || !session) return;
+    const note = coffeeDraft.trim();
+    if (!TURKISH_COFFEE_SWEETNESS.includes(note)) {
+      setError('Türk Kahvesi için şeker seçimi zorunlu');
+      return;
+    }
+    const qty = displayMyQty[turkishCoffeeItem.id]?.qty || 0;
+    await setQty(turkishCoffeeItem.id, Math.max(1, qty), note);
+    setCoffeeOpen(false);
   }
 
   async function leave() {
@@ -1033,9 +1066,9 @@ export default function OfficePage() {
   async function closeSession() {
     if (!session) return;
     const ok = await confirmDialog({
-      title: 'Oturumu kapat',
-      message: 'Sipariş onaylanmadan kapatılacak. Mutfağa ticket gitmeyecek. Devam?',
-      confirmLabel: 'Oturumu kapat',
+      title: 'Siparişi iptal et',
+      message: 'Sipariş onaylanmadan iptal edilecek. Mutfağa ticket gitmeyecek. Devam?',
+      confirmLabel: 'Siparişi İptal Et',
       tone: 'danger',
     });
     if (!ok) return;
@@ -1137,7 +1170,7 @@ export default function OfficePage() {
                   <Avatar name={u.name} avatarUrl={u.avatarUrl} size="sm" />
                   <StatusDot online={u.online} />
                   <span>{u.name}</span>
-                  {u.response === 'skipped' && <em className="resp-badge skip">Gelmeyecek</em>}
+                  {u.response === 'skipped' && <em className="resp-badge skip">İsteği yok</em>}
                   {u.response === 'ordered' && <em className="resp-badge ordered">Sipariş</em>}
                 </span>
               ))}
@@ -1335,8 +1368,10 @@ export default function OfficePage() {
                         {(session.skippedUsers || []).map((u) => (
                           <span key={u.id} className="participant-chip skipped">
                             <Avatar name={u.name} avatarUrl={u.avatarUrl} size="sm" />
-                            <span className="chip-name">{u.name}</span>
-                            <em>Gelmeyecek</em>
+                            <span className="chip-meta">
+                              <span className="chip-name">{u.name}</span>
+                              <em className="chip-status">İsteği yok</em>
+                            </span>
                           </span>
                         ))}
                       </div>
@@ -1395,6 +1430,49 @@ export default function OfficePage() {
                       );
                     })}
 
+                    {turkishCoffeeItem && (
+                      <div
+                        className={`quick-order-card tap-card special coffee-card pressable ${displayMyQty[turkishCoffeeItem.id]?.qty ? 'has-qty' : ''}`}
+                      >
+                        {(displayMyQty[turkishCoffeeItem.id]?.qty || 0) > 0 && (
+                          <span className="qo-badge">{displayMyQty[turkishCoffeeItem.id].qty}</span>
+                        )}
+                        {(displayMyQty[turkishCoffeeItem.id]?.qty || 0) > 0 && (
+                          <button
+                            type="button"
+                            className="qo-minus"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const q = displayMyQty[turkishCoffeeItem.id]?.qty || 0;
+                              const note = displayMyQty[turkishCoffeeItem.id]?.note;
+                              setQty(
+                                turkishCoffeeItem.id,
+                                Math.max(0, q - 1),
+                                q - 1 > 0 ? note : null
+                              );
+                            }}
+                            aria-label="Azalt"
+                          >
+                            −
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="quick-order-main"
+                          onClick={() => tapItem(turkishCoffeeItem)}
+                          aria-label="Türk Kahvesi"
+                        >
+                          <span className="qo-emoji" aria-hidden>
+                            {iconMeta(turkishCoffeeItem.icon).emoji}
+                          </span>
+                          <strong>Türk Kahvesi</strong>
+                          {displayMyQty[turkishCoffeeItem.id]?.note && (
+                            <em className="qo-state">{displayMyQty[turkishCoffeeItem.id].note}</em>
+                          )}
+                        </button>
+                      </div>
+                    )}
+
                     <div className={`quick-order-card tap-card special skip-card pressable ${mySkipped ? 'has-qty' : ''}`}>
                       <button
                         type="button"
@@ -1451,6 +1529,44 @@ export default function OfficePage() {
                     )}
                   </div>
 
+                  {coffeeOpen && turkishCoffeeItem && (
+                    <div className="other-note-panel coffee-sweetness-panel">
+                      <label id="coffee-sweetness-label">Türk Kahvesi — şeker seçin</label>
+                      <p className="muted tiny">Seçim zorunlu</p>
+                      <div
+                        className="coffee-sweetness-options"
+                        role="radiogroup"
+                        aria-labelledby="coffee-sweetness-label"
+                      >
+                        {TURKISH_COFFEE_SWEETNESS.map((opt) => (
+                          <label key={opt} className={`coffee-sweetness-option ${coffeeDraft === opt ? 'selected' : ''}`}>
+                            <input
+                              type="radio"
+                              name="turkish-coffee-sweetness"
+                              value={opt}
+                              checked={coffeeDraft === opt}
+                              onChange={() => setCoffeeDraft(opt)}
+                            />
+                            <span>{opt}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="other-note-actions">
+                        <button type="button" className="btn ghost" onClick={() => setCoffeeOpen(false)}>
+                          Vazgeç
+                        </button>
+                        <button
+                          type="button"
+                          className="btn primary pressable"
+                          disabled={!TURKISH_COFFEE_SWEETNESS.includes(coffeeDraft)}
+                          onClick={saveTurkishCoffee}
+                        >
+                          Kaydet
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {otherOpen && otherItem && (
                     <div className="other-note-panel">
                       <label htmlFor="other-note">Ne istersiniz?</label>
@@ -1498,7 +1614,7 @@ export default function OfficePage() {
                   ) : (
                     <ul className="summary-list">
                       {asSummaryList(session.summary).map((s) => (
-                        <li key={s.menuItemId}>
+                        <li key={`${s.menuItemId}-${s.name}`}>
                           <span aria-hidden>{iconMeta(s.icon).emoji}</span>
                           <strong>{s.qty}×</strong> {s.name}
                         </li>
@@ -1524,8 +1640,9 @@ export default function OfficePage() {
                   <div className="detail-lines">
                     {(session.lines || []).map((l) => (
                       <span key={l.id} className="chip">
-                        {l.user.name}: {l.qty}× {l.menuItem.name}
-                        {l.note ? ` — ${l.note}` : ''}
+                        {l.user.name}: {l.qty}×{' '}
+                        {formatOrderedItemLabel(l.menuItem.name, l.menuItem.icon, l.note)}
+                        {!isTurkishCoffeeItem(l.menuItem) && l.note ? ` — ${l.note}` : ''}
                       </span>
                     ))}
                   </div>
@@ -1552,8 +1669,12 @@ export default function OfficePage() {
                                 ).emoji}
                               </span>
                               <span>
-                                {e.payload?.menuItemName || 'Ürün'} x{e.payload?.qty ?? 0}
-                                {e.payload?.note ? ` — ${e.payload.note}` : ''}
+                                {formatOrderedItemLabel(
+                                  e.payload?.menuItemName || 'Ürün',
+                                  menuIconById.get(e.payload?.menuItemId) || e.payload?.icon,
+                                  e.payload?.note
+                                )}{' '}
+                                x{e.payload?.qty ?? 0}
                               </span>
                             </span>
                           </span>
@@ -1574,7 +1695,7 @@ export default function OfficePage() {
                   {isOpener ? (
                     <>
                       <button className="btn ghost xl danger-ghost pressable" disabled={busy} onClick={closeSession}>
-                        Oturumu Kapat
+                        Siparişi İptal Et
                       </button>
                       <button className="btn primary xl pressable" disabled={busy} onClick={confirm}>
                         Mutfağa gönder

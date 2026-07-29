@@ -5,6 +5,13 @@ import { SessionEventType, SocketEvents } from '../../common/sessionEventType.js
 import { logger } from '../../common/logger.js';
 import { parseTicketSummaryJson } from '../../common/ticketSummary.js';
 import { safeJsonParse } from '../../common/safeJson.js';
+import {
+  formatOrderedItemLabel,
+  isOtherMenuItem,
+  isTurkishCoffeeMenuItem,
+  isValidTurkishCoffeeNote,
+  summaryAggregateKey,
+} from '../../common/menuItemRules.js';
 import { isNotificationEventAllowed } from '../notifications/notificationAudience.js';
 import { notificationService } from '../notifications/notification.service.js';
 import { presenceService } from '../presence/presence.service.js';
@@ -141,16 +148,25 @@ export async function serializeSession(session) {
   const summaryMap = new Map();
   for (const line of session.lines) {
     if (line.qty <= 0) continue;
-    const key = line.menuItemId;
+    const note = line.note || null;
+    const key = summaryAggregateKey(line.menuItemId, line.menuItem, note);
+    const displayName = formatOrderedItemLabel(
+      line.menuItem.name,
+      line.menuItem.icon,
+      note
+    );
     const prev = summaryMap.get(key) || {
       menuItemId: line.menuItemId,
-      name: line.menuItem.name,
+      name: displayName,
       icon: line.menuItem.icon,
       qty: 0,
       notes: [],
     };
     prev.qty += line.qty;
-    if (line.note) prev.notes.push({ userName: line.user.name, note: line.note });
+    // Turkish coffee sweetness is already in the display name — skip duplicate notes.
+    if (note && !isTurkishCoffeeMenuItem(line.menuItem)) {
+      prev.notes.push({ userName: line.user.name, note });
+    }
     summaryMap.set(key, prev);
   }
 
@@ -239,25 +255,33 @@ function buildTicketPayload(session) {
   const details = [];
   for (const line of session.lines) {
     if (line.qty <= 0) continue;
-    const key = line.menuItemId;
+    const note = line.note || null;
+    const key = summaryAggregateKey(line.menuItemId, line.menuItem, note);
+    const displayName = formatOrderedItemLabel(
+      line.menuItem.name,
+      line.menuItem.icon,
+      note
+    );
     const prev = summaryMap.get(key) || {
       menuItemId: line.menuItemId,
-      name: line.menuItem.name,
+      name: displayName,
       icon: line.menuItem.icon,
       qty: 0,
       notes: [],
     };
     prev.qty += line.qty;
-    if (line.note) prev.notes.push({ userName: line.user.name, note: line.note });
+    if (note && !isTurkishCoffeeMenuItem(line.menuItem)) {
+      prev.notes.push({ userName: line.user.name, note });
+    }
     summaryMap.set(key, prev);
     details.push({
       userId: line.userId,
       userName: line.user.name,
       menuItemId: line.menuItemId,
-      menuItemName: line.menuItem.name,
+      menuItemName: displayName,
       icon: line.menuItem.icon,
       qty: line.qty,
-      note: line.note || null,
+      note: isTurkishCoffeeMenuItem(line.menuItem) ? null : note,
     });
   }
   const specialRequests = (session.specialRequests || [])
@@ -460,10 +484,13 @@ export async function upsertLine(user, sessionId, menuItemId, qty, meta = {}, no
   const trimmedNote =
     typeof note === 'string' && note.trim() ? note.trim().slice(0, 120) : null;
 
-  const isOther =
-    menuItem.icon === 'other' || menuItem.name.toLocaleLowerCase('tr') === 'diğer';
-  if (safeQty > 0 && isOther && !trimmedNote) {
+  if (safeQty > 0 && isOtherMenuItem(menuItem) && !trimmedNote) {
     throw httpError(400, 'Diğer için açıklama yazın');
+  }
+  if (safeQty > 0 && isTurkishCoffeeMenuItem(menuItem)) {
+    if (!trimmedNote || !isValidTurkishCoffeeNote(trimmedNote)) {
+      throw httpError(400, 'Türk Kahvesi için şeker seçimi zorunlu');
+    }
   }
 
   const stillOpen = await prisma.orderSession.findFirst({
@@ -521,6 +548,7 @@ export async function upsertLine(user, sessionId, menuItemId, qty, meta = {}, no
       {
         menuItemId,
         menuItemName: menuItem.name,
+        icon: menuItem.icon,
         qty: safeQty,
         note: trimmedNote,
       },

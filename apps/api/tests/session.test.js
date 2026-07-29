@@ -171,6 +171,38 @@ describe('SESSION', () => {
     });
     expect(notes).toBeGreaterThan(0);
   });
+
+  it('Türk Kahvesi şeker seçimi zorunlu ve özet etiketi doğru', async () => {
+    const t = await token();
+    const opened = await request(app).post('/sessions').set(authHeader(t)).send({});
+    const sid = opened.body.session.id;
+
+    const missing = await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(t))
+      .send({ menuItemId: fixtures.turkishCoffee.id, qty: 1 });
+    expect(missing.status).toBe(400);
+
+    const bad = await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(t))
+      .send({ menuItemId: fixtures.turkishCoffee.id, qty: 1, note: 'Bol şeker' });
+    expect(bad.status).toBe(400);
+
+    const ok = await request(app)
+      .post(`/sessions/${sid}/lines`)
+      .set(authHeader(t))
+      .send({ menuItemId: fixtures.turkishCoffee.id, qty: 1, note: 'Orta Şekerli' });
+    expect(ok.status).toBe(200);
+    expect(ok.body.session.summary).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Türk Kahvesi (Orta Şekerli)',
+          qty: 1,
+        }),
+      ])
+    );
+  });
 });
 
 describe('RACE CONDITION', () => {

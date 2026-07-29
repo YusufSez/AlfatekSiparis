@@ -51,6 +51,9 @@ export async function resetDb() {
   const soda = await prisma.menuItem.create({
     data: { name: 'Soda', icon: 'soda', sortOrder: 2 },
   });
+  const turkishCoffee = await prisma.menuItem.create({
+    data: { name: 'Türk Kahvesi', icon: 'turkish_coffee', sortOrder: 5 },
+  });
 
   const passwordHash = await bcrypt.hash('123456', 10);
   const admin = await prisma.user.create({
@@ -90,7 +93,7 @@ export async function resetDb() {
   // Reset presence singleton provider state between tests
   presenceService.provider = new MemoryPresenceProvider();
 
-  return { teknik, operasyon, tea, soda, admin, kitchen, yusuf, ahmet, murat };
+  return { teknik, operasyon, tea, soda, turkishCoffee, admin, kitchen, yusuf, ahmet, murat };
 }
 
 export async function loginAs(request, username, password = '123456', remember) {

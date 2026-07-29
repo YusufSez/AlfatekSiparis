@@ -10,6 +10,7 @@ import Modal from '../components/Modal';
 import { LoadError, EmptyState, CardSkeleton } from '../components/LoadStates';
 import { SocketConnectionLabel, SocketOfflineBanner } from '../components/SocketStatus';
 import { iconMeta } from '../lib/uxLabels';
+import { isOtherItem } from '../lib/menuItemRules';
 
 const STATUS_LABEL = {
   new: 'Bekliyor',
@@ -65,9 +66,7 @@ function collectSpecialNotes(ticket) {
     push(r.note, r.userName);
   }
   for (const s of asSummaryList(ticket?.summary)) {
-    const isOther =
-      s.icon === 'other' || String(s.name || '').toLocaleLowerCase('tr') === 'diğer';
-    if (!isOther || !s.notes?.length) continue;
+    if (!isOtherItem(s) || !s.notes?.length) continue;
     for (const n of s.notes) {
       push(n.note, n.userName);
     }
@@ -103,13 +102,11 @@ function OfficeBanner({ office }) {
 }
 
 function TicketProducts({ summary }) {
-  const regular = asSummaryList(summary).filter(
-    (s) => !(s.icon === 'other' || String(s.name || '').toLocaleLowerCase('tr') === 'diğer')
-  );
+  const regular = asSummaryList(summary).filter((s) => !isOtherItem(s));
   return (
     <ul className="ticket-summary kitchen-summary-boxes">
       {regular.map((s) => (
-        <li key={s.menuItemId}>
+        <li key={`${s.menuItemId}-${s.name}`}>
           <span className="big-emoji" aria-hidden>
             {iconMeta(s.icon).emoji}
           </span>

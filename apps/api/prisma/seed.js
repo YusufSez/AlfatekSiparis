@@ -41,6 +41,7 @@ async function main() {
     { name: 'Soda', icon: 'soda', sortOrder: 2 },
     { name: 'Kahve', icon: 'coffee', sortOrder: 3 },
     { name: 'Su', icon: 'water', sortOrder: 4 },
+    { name: 'Türk Kahvesi', icon: 'turkish_coffee', sortOrder: 5 },
     { name: 'Diğer', icon: 'other', sortOrder: 99 },
   ];
   for (const item of menu) {
