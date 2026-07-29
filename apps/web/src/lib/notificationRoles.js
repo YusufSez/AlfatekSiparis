@@ -5,10 +5,8 @@
 
 const OFFICE_EVENTS = new Set([
   'session.opened',
-  'session.sent',
   'session.closed',
   'ticket.preparing',
-  'ticket.delivered',
   'ticket.unavailable',
 ]);
 

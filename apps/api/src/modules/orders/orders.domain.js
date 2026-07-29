@@ -57,6 +57,15 @@ async function activeUserIds({ role, roles, officeId, excludeIds = [] } = {}) {
   return users.map((u) => u.id).filter((id) => !skip.has(id));
 }
 
+/** Turkish “from office” label for kitchen push copy (Teknik Ofisten / Operasyon Ofisinden). */
+function officeFromPhrase(officeName) {
+  const name = String(officeName || 'Ofis').trim() || 'Ofis';
+  if (/Ofisi$/i.test(name)) return name.replace(/Ofisi$/i, 'Ofisinden');
+  if (/Ofis$/i.test(name)) return name.replace(/Ofis$/i, 'Ofisten');
+  if (/[aeıioöuüAEIİOÖUÜ]$/.test(name)) return `${name}'den`;
+  return `${name}'dan`;
+}
+
 /** Non-admin office users may only act on sessions of their own office. */
 function assertSessionOfficeAccess(user, session) {
   if (user.role === 'admin') return;
@@ -905,16 +914,17 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
     requestId: meta.requestId,
   });
 
-  const kitchenPushBody = `${officeName}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`;
+  const fromOffice = officeFromPhrase(officeName);
   const kitchenStaffIds = await activeUserIds({ role: 'kitchen' });
   await notifyUsers(kitchenStaffIds, {
-    title: 'Yeni mutfak siparişi',
-    body: kitchenPushBody,
+    title: `${fromOffice} Yeni Sipariş`,
+    body: `${fromOffice} siparişiniz var.`,
     event: SocketEvents.KITCHEN_NEW,
     payload: {
       ticketId: ticket.id,
       sessionId,
       officeId,
+      officeName,
       status: 'new',
     },
     url: '/kitchen',
@@ -922,17 +932,8 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
     playSound: true,
   });
 
-  const officeUserIds = await activeUserIds({
-    officeId,
-    role: 'office_user',
-  });
-  await notifyUsers(officeUserIds, {
-    title: 'Sipariş mutfağa gitti',
-    body: `${officeName}: ${summary.map((s) => `${s.qty}× ${s.name}`).join(', ')}`,
-    event: SessionEventType.SENT,
-    payload: { sessionId, ticketId: ticket.id },
-    url: '/office',
-  });
+  // Office users: no inbox/push on send — they already pressed "Gönder".
+  // Realtime UI still updates via SESSION_SENT / SESSION_UPDATED above.
 
   return sessionPayload;
 }
@@ -992,18 +993,17 @@ export async function updateTicketStatus(user, ticketId, status, meta = {}) {
 
   const titles = {
     preparing: ticket.status === 'delivered' ? 'Sipariş geri alındı' : 'Sipariş hazırlanıyor',
-    delivered: 'Sipariş teslim edildi',
   };
-  // Office-only status copy — kitchen/admin must not get "hazırlanıyor / teslim" inbox+push
-  if (titles[status]) {
+  // Inbox/push only for preparing (and undo→preparing). Delivered/ready: UI via socket only.
+  if (status === 'preparing' && titles.preparing) {
     const officeUserIds = await activeUserIds({
       officeId: ticket.officeId,
       role: 'office_user',
     });
     await notifyUsers(officeUserIds, {
-      title: titles[status],
+      title: titles.preparing,
       body: ticket.office.name,
-      event: eventType,
+      event: SessionEventType.PREPARING,
       payload: { ticketId, status, undo: ticket.status === 'delivered' && status === 'preparing' },
       url: '/office',
     });

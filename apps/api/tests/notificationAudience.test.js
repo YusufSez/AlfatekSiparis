@@ -28,11 +28,11 @@ describe('notificationAudience', () => {
     expect(isNotificationEventAllowed('kitchen', 'admin.user_created')).toBe(false);
   });
 
-  it('office_user ofis sipariş eventlerini alır', () => {
+  it('office_user ofis sipariş eventlerini alır (sent/delivered inbox yok)', () => {
     expect(isNotificationEventAllowed('office_user', 'session.opened')).toBe(true);
-    expect(isNotificationEventAllowed('office_user', 'session.sent')).toBe(true);
+    expect(isNotificationEventAllowed('office_user', 'session.sent')).toBe(false);
     expect(isNotificationEventAllowed('office_user', 'ticket.preparing')).toBe(true);
-    expect(isNotificationEventAllowed('office_user', 'ticket.delivered')).toBe(true);
+    expect(isNotificationEventAllowed('office_user', 'ticket.delivered')).toBe(false);
     expect(isNotificationEventAllowed('office_user', 'ticket.unavailable')).toBe(true);
     expect(isNotificationEventAllowed('office_user', 'kitchen:new_ticket')).toBe(false);
     expect(isNotificationEventAllowed('office_user', 'kitchen:staff_call')).toBe(false);

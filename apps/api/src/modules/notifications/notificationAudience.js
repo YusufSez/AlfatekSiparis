@@ -11,13 +11,11 @@ import { SessionEventType, SocketEvents } from '../../common/sessionEventType.js
  * that is NOT an inbox/push notification.
  */
 
-/** Office users: own-office order lifecycle only. */
+/** Office users: own-office order lifecycle only (inbox/push). */
 export const OFFICE_EVENTS = new Set([
   SessionEventType.OPENED,
-  SessionEventType.SENT,
   SessionEventType.CLOSED,
   SessionEventType.PREPARING,
-  SessionEventType.DELIVERED,
   SessionEventType.UNAVAILABLE,
 ]);
 
