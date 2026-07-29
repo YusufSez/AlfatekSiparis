@@ -64,9 +64,13 @@ async function sendToSubscription(row, payload) {
     return true;
   } catch (err) {
     const status = err?.statusCode;
-    if (status === 404 || status === 410) {
+    // Gone / invalid / unauthorized — drop stale endpoints (incl. iOS expiry quirks)
+    if (status === 404 || status === 410 || status === 400 || status === 401 || status === 403) {
       await prisma.pushSubscription.deleteMany({ where: { endpoint: row.endpoint } });
-      logger.info('push.subscription_gone', { endpoint: row.endpoint.slice(0, 48) });
+      logger.info('push.subscription_gone', {
+        status,
+        endpoint: row.endpoint.slice(0, 48),
+      });
     } else {
       logger.warn('push.send_failed', { status, message: err?.message });
     }

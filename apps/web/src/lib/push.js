@@ -107,6 +107,18 @@ export async function ensureServiceWorker() {
   return reg;
 }
 
+/** True when this device has an active PushManager subscription (sync-friendly for notify policy). */
+export async function hasLocalPushSubscription() {
+  if (!isPushSupported()) return false;
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager?.getSubscription();
+    return Boolean(sub?.endpoint);
+  } catch {
+    return false;
+  }
+}
+
 async function getLocalPushState() {
   const permission =
     typeof Notification !== 'undefined' ? Notification.permission : 'denied';

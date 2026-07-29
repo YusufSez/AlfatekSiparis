@@ -3,13 +3,21 @@ import { createPortal } from 'react-dom';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useSocketApi } from '../lib/socket';
-import { notificationDedupeKey, showOsNotification } from '../lib/osNotify';
+import { useToast } from '../lib/toast';
+import {
+  isAppForeground,
+  notificationDedupeKey,
+  shouldShowOsNotification,
+  showOsNotification,
+} from '../lib/osNotify';
 import { isNotificationEventAllowed } from '../lib/notificationRoles';
 import { playOrderNotificationSound } from '../lib/orderSound';
+import { hasLocalPushSubscription } from '../lib/push';
 
 export default function NotificationCenter() {
   const { user } = useAuth();
   const { on } = useSocketApi();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
   const wrapRef = useRef(null);
@@ -39,11 +47,30 @@ export default function NotificationCenter() {
       // Special in-app sound is independent of inbox / OS toast / push.
       playOrderNotificationSound(user?.id, n);
 
-      showOsNotification(n.title, n.body, {
-        tag: n.tag,
-        event: n.event,
-        payload: n.payload,
-      });
+      const title = n.title || 'Bildirim';
+      const body = n.body || '';
+
+      void (async () => {
+        const foreground = isAppForeground();
+        if (foreground) {
+          toast.info(body ? `${title} — ${body}` : title, { ttl: 4200 });
+          return;
+        }
+        const hasPush = await hasLocalPushSubscription();
+        if (
+          shouldShowOsNotification({
+            visibilityState: document.visibilityState,
+            hasPushSubscription: hasPush,
+          })
+        ) {
+          showOsNotification(title, body, {
+            tag: n.tag,
+            event: n.event,
+            payload: n.payload,
+            hasPushSubscription: hasPush,
+          });
+        }
+      })();
 
       const key = notificationDedupeKey(n);
       setItems((prev) => {
@@ -72,7 +99,7 @@ export default function NotificationCenter() {
       ac.abort();
       off();
     };
-  }, [on, role, user?.id]);
+  }, [on, role, user?.id, toast]);
 
   useLayoutEffect(() => {
     if (!open || !wrapRef.current) {

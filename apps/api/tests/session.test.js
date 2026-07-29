@@ -152,6 +152,9 @@ describe('SESSION', () => {
     expect(notes[0].title).toBe('Cemile Abla');
     expect(notes[0].body).toContain('Teknik Ofis');
     expect(notes.every((n) => n.user.role === 'kitchen')).toBe(true);
+    const payload = JSON.parse(notes[0].payload || '{}');
+    expect(payload.officeName).toBe('Teknik Ofis');
+    expect(payload.calledAt).toBeTruthy();
 
     const second = await request(app).post('/sessions/staff-call').set(authHeader(t)).send({});
     expect(second.status).toBe(429);

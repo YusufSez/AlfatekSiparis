@@ -1231,6 +1231,8 @@ export async function callKitchenStaff(user, meta = {}) {
   const title = 'Cemile Abla';
   const body = `${officeName} sizi bekliyor.`;
 
+  const calledAt = new Date().toISOString();
+
   const kitchenStaffIds = await activeUserIds({ role: 'kitchen' });
   await notifyUsers(kitchenStaffIds, {
     title,
@@ -1241,6 +1243,7 @@ export async function callKitchenStaff(user, meta = {}) {
       officeName,
       callerId: user.id,
       callerName: user.name,
+      calledAt,
     },
     url: '/kitchen',
     tag: `staff-call-${office.id}`,
@@ -1257,6 +1260,7 @@ export async function callKitchenStaff(user, meta = {}) {
       callerName: user.name,
       title,
       body,
+      calledAt,
     },
     requestId: meta.requestId,
   });
