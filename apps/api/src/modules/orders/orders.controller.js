@@ -7,6 +7,8 @@ import {
   cancelSession,
   callKitchenStaff,
   confirmSession,
+  findActiveTicketForOffice,
+  getOfficeOrderHistory,
   getPresenceForOffice,
   leaveSession,
   openSession,
@@ -35,9 +37,15 @@ router.post('/staff-call', requireRoles('office_user'), async (req, res, next) =
 router.get('/active', requireRoles('office_user', 'admin'), async (req, res, next) => {
   try {
     const officeId = req.user.role === 'admin' ? req.query.officeId : req.user.officeId;
-    if (!officeId) return res.json({ session: null });
+    if (!officeId) return res.json({ session: null, activeTicket: null });
     const session = await ordersRepository.findCollecting(String(officeId));
-    res.json({ session: session ? await serializeSession(session) : null });
+    const activeTicket = session
+      ? null
+      : await findActiveTicketForOffice(String(officeId));
+    res.json({
+      session: session ? await serializeSession(session) : null,
+      activeTicket,
+    });
   } catch (err) {
     next(err);
   }
@@ -53,20 +61,15 @@ router.get('/presence', requireRoles('office_user', 'admin'), async (req, res, n
   }
 });
 
-/** Recent kitchen tickets for the office — OfficePage "Geçmiş Siparişler". */
+/** Recent finished orders for the office — delivered + cancelled (OfficePage history). */
 router.get('/history', requireRoles('office_user', 'admin'), async (req, res, next) => {
   try {
     const officeId = req.user.role === 'admin' ? req.query.officeId : req.user.officeId;
-    if (!officeId) return res.json({ tickets: [] });
+    if (!officeId) return res.json({ tickets: [], entries: [], limit: 0 });
     const rawLimit = Number(req.query.limit ?? req.query.take ?? 20);
     const limit = Math.min(20, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 20));
-    const tickets = await prisma.kitchenTicket.findMany({
-      where: { officeId: String(officeId) },
-      include: { office: true },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    });
-    res.json({ tickets: tickets.map(serializeTicket), limit });
+    const history = await getOfficeOrderHistory(String(officeId), limit);
+    res.json(history);
   } catch (err) {
     next(err);
   }

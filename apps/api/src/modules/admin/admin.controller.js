@@ -389,10 +389,21 @@ router.patch('/settings', async (req, res, next) => {
         autoClose: z.boolean().optional(),
         workingHoursStart: z.string().optional(),
         workingHoursEnd: z.string().optional(),
+        kitchenResponseMinutes: z.number().int().min(1).max(60).optional(),
         config: z.record(z.any()).optional(),
       })
       .safeParse(req.body);
     if (!parsed.success) throw httpError(400, 'Geçersiz ayar');
+
+    const existing = await prisma.appSetting.findUnique({ where: { id: 1 } });
+    const prevConfig = safeJsonParse(existing?.config || '{}', {}) || {};
+    let nextConfig = { ...prevConfig };
+    if (parsed.data.config !== undefined) {
+      nextConfig = { ...nextConfig, ...parsed.data.config };
+    }
+    if (parsed.data.kitchenResponseMinutes !== undefined) {
+      nextConfig.kitchenResponseMinutes = parsed.data.kitchenResponseMinutes;
+    }
 
     const settings = await prisma.appSetting.upsert({
       where: { id: 1 },
@@ -404,7 +415,7 @@ router.patch('/settings', async (req, res, next) => {
         autoClose: parsed.data.autoClose ?? true,
         workingHoursStart: parsed.data.workingHoursStart ?? '08:00',
         workingHoursEnd: parsed.data.workingHoursEnd ?? '19:00',
-        config: JSON.stringify(parsed.data.config ?? {}),
+        config: JSON.stringify(nextConfig),
       },
       update: {
         ...(parsed.data.sessionDurationSec !== undefined
@@ -423,8 +434,8 @@ router.patch('/settings', async (req, res, next) => {
         ...(parsed.data.workingHoursEnd !== undefined
           ? { workingHoursEnd: parsed.data.workingHoursEnd }
           : {}),
-        ...(parsed.data.config !== undefined
-          ? { config: JSON.stringify(parsed.data.config) }
+        ...(parsed.data.config !== undefined || parsed.data.kitchenResponseMinutes !== undefined
+          ? { config: JSON.stringify(nextConfig) }
           : {}),
       },
     });

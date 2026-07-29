@@ -10,6 +10,8 @@ export const SessionEventType = Object.freeze({
   PREPARING: 'ticket.preparing',
   DELIVERED: 'ticket.delivered',
   UNAVAILABLE: 'ticket.unavailable',
+  /** Kitchen did not press preparing within admin timeout — notify opener once */
+  KITCHEN_NO_RESPONSE: 'ticket.kitchen_no_response',
   STAFF_CALL: 'kitchen:staff_call',
 });
 

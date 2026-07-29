@@ -17,6 +17,7 @@ export const OFFICE_EVENTS = new Set([
   SessionEventType.CLOSED,
   SessionEventType.PREPARING,
   SessionEventType.UNAVAILABLE,
+  SessionEventType.KITCHEN_NO_RESPONSE,
 ]);
 
 /** Kitchen staff: new tickets, staff calls, peer shortage alerts. */

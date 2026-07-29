@@ -356,10 +356,179 @@ export function scheduleSessionExpiry(sessionId, endsAt) {
 export async function restoreSessionTimers() {
   const active = await prisma.orderSession.findMany({ where: { status: 'collecting' } });
   for (const s of active) scheduleSessionExpiry(s.id, s.endsAt);
+  await restoreKitchenResponseTimers();
+}
+
+const kitchenResponseTimers = new Map();
+
+function clearKitchenResponseTimer(ticketId) {
+  const t = kitchenResponseTimers.get(ticketId);
+  if (t) {
+    clearTimeout(t);
+    kitchenResponseTimers.delete(ticketId);
+  }
+}
+
+function kitchenResponseMinutesFromSettings(settings) {
+  const raw = Number(settings?.kitchenResponseMinutes ?? settings?.config?.kitchenResponseMinutes);
+  if (!Number.isFinite(raw)) return 5;
+  return Math.min(60, Math.max(1, Math.round(raw)));
+}
+
+/**
+ * After ticket is sent: if kitchen never moves to preparing within N minutes,
+ * notify the session opener once (inbox + push). Cleared on preparing.
+ */
+export function scheduleKitchenResponseTimeout(ticketId, createdAt, minutes) {
+  clearKitchenResponseTimer(ticketId);
+  const mins = Math.min(60, Math.max(1, Number(minutes) || 5));
+  const deadline = new Date(createdAt).getTime() + mins * 60_000;
+  const ms = deadline - Date.now();
+  const run = () => {
+    kitchenResponseTimers.delete(ticketId);
+    notifyKitchenNoResponse(ticketId).catch((err) => {
+      logger.error('kitchen.response_timeout_failed', {
+        ticketId,
+        message: err?.message || String(err),
+      });
+    });
+  };
+  if (ms <= 0) {
+    run();
+    return;
+  }
+  kitchenResponseTimers.set(ticketId, setTimeout(run, ms + 50));
+}
+
+async function notifyKitchenNoResponse(ticketId) {
+  const ticket = await prisma.kitchenTicket.findUnique({
+    where: { id: ticketId },
+    include: { session: { select: { id: true, openedById: true, status: true } }, office: true },
+  });
+  if (!ticket || ticket.status !== 'new') return;
+
+  const already = await prisma.sessionEvent.findFirst({
+    where: { sessionId: ticket.sessionId, type: SessionEventType.KITCHEN_NO_RESPONSE },
+    select: { id: true },
+  });
+  if (already) return;
+
+  const openerId = ticket.session?.openedById;
+  if (!openerId) return;
+
+  await writeEvent(
+    ticket.sessionId,
+    SessionEventType.KITCHEN_NO_RESPONSE,
+    null,
+    { ticketId: ticket.id },
+    null
+  );
+
+  await notifyUsers([openerId], {
+    title: 'Mutfak yanıt vermedi',
+    body: 'Mutfak siparişinize henüz yanıt vermedi.',
+    event: SessionEventType.KITCHEN_NO_RESPONSE,
+    payload: {
+      ticketId: ticket.id,
+      sessionId: ticket.sessionId,
+      officeId: ticket.officeId,
+    },
+    url: '/office',
+    tag: `kitchen-no-response-${ticket.id}`,
+  });
+
+  logger.info('kitchen.response_timeout_notified', {
+    ticketId: ticket.id,
+    openerId,
+  });
+}
+
+export async function restoreKitchenResponseTimers() {
+  const settings = await getSettings();
+  const minutes = kitchenResponseMinutesFromSettings(settings);
+  const open = await prisma.kitchenTicket.findMany({
+    where: { status: 'new' },
+    select: { id: true, createdAt: true, sessionId: true },
+  });
+  for (const t of open) {
+    const already = await prisma.sessionEvent.findFirst({
+      where: { sessionId: t.sessionId, type: SessionEventType.KITCHEN_NO_RESPONSE },
+      select: { id: true },
+    });
+    if (already) continue;
+    scheduleKitchenResponseTimeout(t.id, t.createdAt, minutes);
+  }
+}
+
+/** In-flight kitchen ticket for office UI (sent but not delivered). */
+export async function findActiveTicketForOffice(officeId) {
+  const ticket = await prisma.kitchenTicket.findFirst({
+    where: {
+      officeId: String(officeId),
+      status: { in: ['new', 'preparing'] },
+    },
+    include: { office: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  return ticket ? serializeTicket(ticket) : null;
+}
+
+/** History: delivered tickets + cancelled (closed) sessions without a delivered ticket. */
+export async function getOfficeOrderHistory(officeId, limit = 20) {
+  const take = Math.min(20, Math.max(1, limit));
+  const delivered = await prisma.kitchenTicket.findMany({
+    where: { officeId: String(officeId), status: 'delivered' },
+    include: { office: true },
+    orderBy: { createdAt: 'desc' },
+    take,
+  });
+
+  const cancelledSessions = await prisma.orderSession.findMany({
+    where: {
+      officeId: String(officeId),
+      status: 'closed',
+      ticket: { is: null },
+    },
+    orderBy: { updatedAt: 'desc' },
+    take,
+    select: {
+      id: true,
+      updatedAt: true,
+      createdAt: true,
+      confirmedAt: true,
+    },
+  });
+
+  const entries = [
+    ...delivered.map((t) => ({
+      kind: 'delivered',
+      ticket: serializeTicket(t),
+      at: t.updatedAt || t.createdAt,
+    })),
+    ...cancelledSessions.map((s) => ({
+      kind: 'cancelled',
+      sessionId: s.id,
+      at: s.updatedAt || s.createdAt,
+      ticket: null,
+    })),
+  ]
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, take);
+
+  return {
+    tickets: delivered.map(serializeTicket),
+    entries,
+    limit: take,
+  };
 }
 
 export async function getSettings() {
   const s = await prisma.appSetting.findUnique({ where: { id: 1 } });
+  const config = safeJsonParse(s?.config || '{}', {}) || {};
+  const kitchenResponseMinutes = kitchenResponseMinutesFromSettings({
+    kitchenResponseMinutes: config.kitchenResponseMinutes,
+    config,
+  });
   return {
     sessionDurationSec: s?.sessionDurationSec ?? 120,
     companyName: s?.companyName ?? 'Ofis Sipariş',
@@ -367,7 +536,8 @@ export async function getSettings() {
     autoClose: s?.autoClose ?? true,
     workingHoursStart: s?.workingHoursStart ?? '08:00',
     workingHoursEnd: s?.workingHoursEnd ?? '19:00',
-    config: safeJsonParse(s?.config || '{}', {}) || {},
+    kitchenResponseMinutes,
+    config,
   };
 }
 
@@ -935,6 +1105,12 @@ export async function finalizeSession(sessionId, reason, actorId = null, meta = 
   // Office users: no inbox/push on send — they already pressed "Gönder".
   // Realtime UI still updates via SESSION_SENT / SESSION_UPDATED above.
 
+  scheduleKitchenResponseTimeout(
+    ticket.id,
+    ticket.createdAt || new Date(),
+    kitchenResponseMinutesFromSettings(settings)
+  );
+
   return sessionPayload;
 }
 
@@ -990,6 +1166,11 @@ export async function updateTicketStatus(user, ticketId, status, meta = {}) {
     payload,
     requestId: meta.requestId,
   });
+
+  // First kitchen action (preparing) cancels the no-response timeout
+  if (status === 'preparing' || status === 'delivered') {
+    clearKitchenResponseTimer(ticketId);
+  }
 
   const titles = {
     preparing: ticket.status === 'delivered' ? 'Sipariş geri alındı' : 'Sipariş hazırlanıyor',

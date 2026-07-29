@@ -269,16 +269,49 @@ function clearLegacyOrderHistoryKeys() {
 
 function ticketToHistoryEntry(ticket) {
   const receipt = buildOrderReceipt(ticket);
-  if (!receipt?.items?.length || !ticket?.sessionId) return null;
+  if (!ticket?.sessionId) return null;
+  const outcome =
+    ticket.status === 'delivered'
+      ? 'delivered'
+      : ticket.status === 'cancelled'
+        ? 'cancelled'
+        : 'delivered';
   return {
     id: ticket.sessionId,
     sessionId: ticket.sessionId,
     ticketId: ticket.id,
-    items: receipt.items,
-    notes: receipt.notes || [],
-    sentAt: ticket.createdAt || receipt.sentAt,
+    items: receipt?.items?.length ? receipt.items : [],
+    notes: receipt?.notes || [],
+    sentAt: ticket.updatedAt || ticket.createdAt || receipt?.sentAt,
+    outcome,
     _source: 'api',
   };
+}
+
+function historyEntryFromApi(entry) {
+  if (!entry) return null;
+  if (entry.kind === 'cancelled') {
+    return {
+      id: entry.sessionId,
+      sessionId: entry.sessionId,
+      ticketId: null,
+      items: [],
+      notes: [],
+      sentAt: entry.at,
+      outcome: 'cancelled',
+      _source: 'api',
+    };
+  }
+  if (entry.kind === 'delivered' && entry.ticket) {
+    return ticketToHistoryEntry({ ...entry.ticket, status: 'delivered' });
+  }
+  return null;
+}
+
+function isPersistableHistoryEntry(entry) {
+  if (!entry?.sessionId || !Array.isArray(entry.items)) return false;
+  if (entry.outcome === 'cancelled') return true;
+  return entry.items.length > 0;
 }
 
 function loadCachedOrderHistory(userId, officeId) {
@@ -288,7 +321,7 @@ function loadCachedOrderHistory(userId, officeId) {
     const list = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(list)) return [];
     return list
-      .filter((entry) => entry?.sessionId && Array.isArray(entry.items) && entry.items.length)
+      .filter(isPersistableHistoryEntry)
       .slice(0, ORDER_HISTORY_FETCH_LIMIT)
       .map((entry) => ({ ...entry, _source: entry._source || 'localStorage' }));
   } catch {
@@ -300,9 +333,9 @@ function saveCachedOrderHistory(userId, officeId, list) {
   if (!userId || !officeId) return;
   try {
     const clean = (list || [])
-      .filter((entry) => entry?.sessionId && Array.isArray(entry.items) && entry.items.length)
+      .filter(isPersistableHistoryEntry)
       .slice(0, ORDER_HISTORY_FETCH_LIMIT)
-      .map(({ id, sessionId, ticketId, items, notes, sentAt, total }) => ({
+      .map(({ id, sessionId, ticketId, items, notes, sentAt, total, outcome }) => ({
         id: id || sessionId,
         sessionId,
         ticketId: ticketId || null,
@@ -310,6 +343,7 @@ function saveCachedOrderHistory(userId, officeId, list) {
         notes: notes || [],
         sentAt,
         total: total ?? null,
+        outcome: outcome || 'delivered',
       }));
     localStorage.setItem(orderHistoryStorageKey(userId, officeId), JSON.stringify(clean));
   } catch {
@@ -323,7 +357,10 @@ function receiptFingerprint(receipt) {
 }
 
 function pushOrderHistoryLocal(userId, officeId, receipt) {
-  if (!userId || !officeId || !receipt?.items?.length || !receipt.sessionId) {
+  if (!userId || !officeId || !receipt?.sessionId) {
+    return loadCachedOrderHistory(userId, officeId);
+  }
+  if (!isPersistableHistoryEntry({ ...receipt, items: receipt.items || [] })) {
     return loadCachedOrderHistory(userId, officeId);
   }
   const id = receipt.sessionId;
@@ -335,6 +372,7 @@ function pushOrderHistoryLocal(userId, officeId, receipt) {
     notes: receipt.notes || [],
     sentAt: receipt.sentAt,
     total: receipt.total ?? null,
+    outcome: receipt.outcome || 'delivered',
     _source: 'state',
   };
   const existing = loadCachedOrderHistory(userId, officeId);
@@ -388,17 +426,30 @@ function OrderHistoryAccordion({ entries }) {
       <div className="order-history-list">
         {visible.map((entry) => (
           <article key={entry.id} className="order-history-item">
-            <time className="order-history-when">{formatHistoryWhen(entry.sentAt)}</time>
-            <ul className="order-history-products">
-              {(entry.items || []).map((item) => (
-                <li key={`${entry.id}-${item.menuItemId || item.name}`}>
-                  <span aria-hidden>{iconMeta(item.icon).emoji}</span>
-                  <span>
-                    {item.name} x{item.qty}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <div className="order-history-item-head">
+              <time className="order-history-when">{formatHistoryWhen(entry.sentAt)}</time>
+              {entry.outcome === 'cancelled' ? (
+                <span className="order-history-badge tone-cancel">🔴 İptal Edildi</span>
+              ) : (
+                <span className="order-history-badge tone-ok">🟢 Teslim Edildi</span>
+              )}
+            </div>
+            {(entry.items || []).length > 0 ? (
+              <ul className="order-history-products">
+                {(entry.items || []).map((item) => (
+                  <li key={`${entry.id}-${item.menuItemId || item.name}`}>
+                    <span aria-hidden>{iconMeta(item.icon).emoji}</span>
+                    <span>
+                      {item.name} x{item.qty}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted tiny order-history-empty-items">
+                {entry.outcome === 'cancelled' ? 'Sipariş iptal edildi' : 'Ürün yok'}
+              </p>
+            )}
             {(entry.notes || []).length > 0 && (
               <div className="order-history-notes">
                 <strong className="tiny">Özel İstek</strong>
@@ -446,6 +497,7 @@ export default function OfficePage() {
   const [coffeeDraft, setCoffeeDraft] = useState('');
   const [coffeeOpen, setCoffeeOpen] = useState(false);
   const [specialDraft, setSpecialDraft] = useState('');
+  const [specialDirty, setSpecialDirty] = useState(false);
   const [staffCallBusy, setStaffCallBusy] = useState(false);
   const [staffCallOnCooldown, setStaffCallOnCooldown] = useState(false);
   /** collecting | dispatching | collected | preparing | delivered | null */
@@ -453,8 +505,6 @@ export default function OfficePage() {
   const [lastSentOrder, setLastSentOrder] = useState(null);
   const [orderHistory, setOrderHistory] = useState([]);
   const [shortageAlert, setShortageAlert] = useState(null);
-  const specialSaveTimer = useRef(null);
-  const specialDirty = useRef(false);
   /** Per menuItemId: coalesce rapid taps, serialize POSTs, always apply latest qty. */
   const lineQueuesRef = useRef(new Map());
   /** Optimistic qty targets — taps read/write here so rapid +1 is not lost. */
@@ -478,7 +528,6 @@ export default function OfficePage() {
     return () => {
       for (const id of timersRef.current) clearTimeout(id);
       timersRef.current.clear();
-      if (specialSaveTimer.current) clearTimeout(specialSaveTimer.current);
       if (staffCallCooldownTimer.current) clearTimeout(staffCallCooldownTimer.current);
     };
   }, []);
@@ -510,7 +559,11 @@ export default function OfficePage() {
     api(`/sessions/history?limit=${ORDER_HISTORY_FETCH_LIMIT}`)
       .then((data) => {
         if (cancelled) return;
-        const fromApi = (data.tickets || []).map(ticketToHistoryEntry).filter(Boolean);
+        const fromEntries = (data.entries || []).map(historyEntryFromApi).filter(Boolean);
+        const fromTickets = (data.tickets || [])
+          .map((t) => ticketToHistoryEntry({ ...t, status: t.status || 'delivered' }))
+          .filter(Boolean);
+        const fromApi = fromEntries.length ? fromEntries : fromTickets;
         console.log('[order-history] source=API', fromApi);
         setOrderHistory(fromApi);
         saveCachedOrderHistory(user.id, user.officeId, fromApi);
@@ -542,6 +595,7 @@ export default function OfficePage() {
         return;
       }
       receipt.id = receipt.sessionId;
+      // Keep as ACTIVE receipt — do not push to history until delivered/cancelled
       setLastSentOrder((prev) => {
         if (!prev) return receipt;
         if (prev.sessionId && receipt.sessionId && prev.sessionId === receipt.sessionId) {
@@ -552,9 +606,26 @@ export default function OfficePage() {
         }
         return prev;
       });
-      const next = pushOrderHistoryLocal(user?.id, user?.officeId, receipt);
-      setOrderHistory(next);
-      console.log('[order-history] source=state (after send)', next);
+    },
+    []
+  );
+
+  const commitHistoryEntry = useCallback(
+    (receipt, outcome = 'delivered') => {
+      if (!receipt?.sessionId || !user?.id || !user?.officeId) return;
+      const entry = {
+        ...receipt,
+        id: receipt.sessionId,
+        sessionId: receipt.sessionId,
+        outcome,
+      };
+      const next = pushOrderHistoryLocal(user.id, user.officeId, entry);
+      // Ensure outcome persisted in cache list
+      const withOutcome = next.map((e) =>
+        e.sessionId === entry.sessionId ? { ...e, outcome } : e
+      );
+      saveCachedOrderHistory(user.id, user.officeId, withOutcome);
+      setOrderHistory(withOutcome);
     },
     [user?.id, user?.officeId]
   );
@@ -590,12 +661,24 @@ export default function OfficePage() {
       return;
     }
 
-    // No collecting session
+    // No collecting session — restore in-flight kitchen ticket as ACTIVE (not history)
     setSession(null);
     setEvents([]);
     if (soft) {
       // Keep post-send UI: orderPhase, lastSentOrder, orderHistory / receipt
       return;
+    }
+    if (active.activeTicket) {
+      const receipt = buildOrderReceipt(active.activeTicket);
+      if (receipt) {
+        receipt.sessionId = active.activeTicket.sessionId || receipt.sessionId;
+        receipt.id = receipt.sessionId;
+        receipt.ticketId = active.activeTicket.id;
+        setLastSentOrder(receipt);
+        const st = active.activeTicket.status;
+        setOrderPhase(st === 'preparing' ? 'preparing' : 'collected');
+        return;
+      }
     }
     setOrderPhase(null);
     setLastSentOrder(null);
@@ -665,6 +748,20 @@ export default function OfficePage() {
         scheduleTimeout(() => setOrderPhase((p) => (p === 'dispatching' ? 'collected' : p)), 1600);
       }),
       on('session:closed', () => {
+        // Collecting cancel → history (iptal). Post-send active ticket is cleared without
+        // history here; delivered path commits history separately.
+        if (orderPhaseRef.current === 'collecting' && sessionIdRef.current) {
+          commitHistoryEntry(
+            {
+              sessionId: sessionIdRef.current,
+              id: sessionIdRef.current,
+              items: [],
+              notes: [],
+              sentAt: new Date().toISOString(),
+            },
+            'cancelled'
+          );
+        }
         setSession(null);
         setOrderPhase(null);
         setLastSentOrder(null);
@@ -704,6 +801,8 @@ export default function OfficePage() {
         if (ticket.status === 'preparing') {
           setOrderPhase('preparing');
         } else if (ticket.status === 'delivered') {
+          const receipt = buildOrderReceipt(ticket);
+          if (receipt) commitHistoryEntry(receipt, 'delivered');
           setOrderPhase('delivered');
           scheduleTimeout(() => {
             setOrderPhase((p) => (p === 'delivered' ? null : p));
@@ -731,7 +830,7 @@ export default function OfficePage() {
       // OS toasts for inbox events → NotificationCenter (role-filtered)
     ];
     return () => offs.forEach((off) => off());
-  }, [on, user.officeId, rememberSentOrder]);
+  }, [on, user.officeId, rememberSentOrder, commitHistoryEntry]);
 
   useEffect(() => {
     if (!session?.id) return;
@@ -860,10 +959,10 @@ export default function OfficePage() {
 
   // Keep local draft in sync when session updates (unless user is typing)
   useEffect(() => {
-    if (!session || specialDirty.current) return;
+    if (!session || specialDirty) return;
     const mine = (session.specialRequests || []).find((r) => r.userId === user?.id);
     setSpecialDraft(mine?.note || '');
-  }, [session, user?.id]);
+  }, [session, user?.id, specialDirty]);
 
   const timelineEvents = useMemo(() => groupTimelineEvents(events), [events]);
 
@@ -881,6 +980,8 @@ export default function OfficePage() {
       setSession(data.session);
       setLastSentOrder(null);
       setOrderPhase('collecting');
+      setSpecialDirty(false);
+      setSpecialDraft('');
     } catch (err) {
       setError(err.message);
       if (err.data?.session) setSession(err.data.session);
@@ -941,26 +1042,27 @@ export default function OfficePage() {
 
   async function saveSpecialRequest(note) {
     if (!session) return;
+    setBusy(true);
     const trimmed = String(note || '').trim();
     try {
       const data = await api(`/sessions/${session.id}/special-request`, {
         method: 'POST',
         body: { note: trimmed || null },
       });
-      specialDirty.current = false;
+      setSpecialDirty(false);
       setSession(data.session);
+      toast.success(trimmed ? 'Özel istek kaydedildi' : 'Özel istek temizlendi');
     } catch (err) {
       setError(err.message);
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
     }
   }
 
   function onSpecialDraftChange(value) {
-    specialDirty.current = true;
+    setSpecialDirty(true);
     setSpecialDraft(value);
-    if (specialSaveTimer.current) clearTimeout(specialSaveTimer.current);
-    specialSaveTimer.current = setTimeout(() => {
-      void saveSpecialRequest(value);
-    }, 650);
   }
 
   async function callStaff() {
@@ -1210,7 +1312,7 @@ export default function OfficePage() {
                     </div>
                   </div>
                 </div>
-                <OrderHistoryAccordion entries={orderHistory} />
+                <OrderHistoryAccordion entries={pastOrders} />
               </section>
             )}
 
@@ -1594,16 +1696,24 @@ export default function OfficePage() {
                     <p className="muted tiny">Opsiyonel — şekersiz, az köpüklü, karton bardak…</p>
                     <textarea
                       id="special-request"
+                      className="special-request-input"
                       rows={2}
                       maxLength={200}
                       placeholder="Şekersiz olsun, çay açık olsun…"
                       value={specialDraft}
                       disabled={busy || mySkipped}
                       onChange={(e) => onSpecialDraftChange(e.target.value)}
-                      onBlur={() => {
-                        if (specialDirty.current) void saveSpecialRequest(specialDraft);
-                      }}
                     />
+                    <div className="special-request-actions">
+                      <button
+                        type="button"
+                        className="btn primary pressable"
+                        disabled={busy || mySkipped || !specialDirty}
+                        onClick={() => void saveSpecialRequest(specialDraft)}
+                      >
+                        Kaydet
+                      </button>
+                    </div>
                   </div>
                 </section>
 
@@ -1694,11 +1804,11 @@ export default function OfficePage() {
                   )}
                   {isOpener ? (
                     <>
-                      <button className="btn ghost xl danger-ghost pressable" disabled={busy} onClick={closeSession}>
-                        Siparişi İptal Et
-                      </button>
                       <button className="btn primary xl pressable" disabled={busy} onClick={confirm}>
                         Mutfağa gönder
+                      </button>
+                      <button className="btn danger xl pressable" disabled={busy} onClick={closeSession}>
+                        Siparişi İptal Et
                       </button>
                     </>
                   ) : (

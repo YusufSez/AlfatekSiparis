@@ -41,6 +41,7 @@ export default function SettingsPage() {
           autoClose: fd.get('autoClose') === 'on',
           workingHoursStart: fd.get('workingHoursStart'),
           workingHoursEnd: fd.get('workingHoursEnd'),
+          kitchenResponseMinutes: Number(fd.get('kitchenResponseMinutes')),
           config,
         },
       });
@@ -99,6 +100,20 @@ export default function SettingsPage() {
           <label className="settings-field">
             <span>Mesai bitiş</span>
             <input name="workingHoursEnd" defaultValue={settings.workingHoursEnd} />
+          </label>
+          <label className="settings-field">
+            <span>Yanıt süresi (dakika)</span>
+            <input
+              name="kitchenResponseMinutes"
+              type="number"
+              min={1}
+              max={60}
+              defaultValue={settings.kitchenResponseMinutes ?? 5}
+              required
+            />
+            <span className="muted tiny">
+              Mutfak PREPARING vermezse sipariş sahibine uyarı gönderilir
+            </span>
           </label>
           <label className="settings-field settings-span-2">
             <span>Gelişmiş config (JSON)</span>

@@ -14,11 +14,36 @@ import { isNotificationEventAllowed } from '../lib/notificationRoles';
 import { playOrderNotificationSound } from '../lib/orderSound';
 import { hasLocalPushSubscription } from '../lib/push';
 
+const DROPDOWN_LIMIT = 4;
+
+function NotificationList({ items }) {
+  if (items.length === 0) {
+    return <p className="muted empty-mini">Bildirim yok</p>;
+  }
+  return (
+    <ul className="notif-list">
+      {items.map((n) => (
+        <li key={n.id} className={!n.readAt ? 'unread' : 'read'}>
+          <div className="notif-item-top">
+            <strong>{n.title}</strong>
+            <span className={`notif-state ${n.readAt ? 'read' : 'unread'}`}>
+              {n.readAt ? 'Okundu' : 'Yeni'}
+            </span>
+          </div>
+          <span>{n.body}</span>
+          <small>{new Date(n.createdAt).toLocaleString('tr-TR')}</small>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function NotificationCenter() {
   const { user } = useAuth();
   const { on } = useSocketApi();
   const toast = useToast();
   const [open, setOpen] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [items, setItems] = useState([]);
   const wrapRef = useRef(null);
   const panelRef = useRef(null);
@@ -132,13 +157,17 @@ export default function NotificationCenter() {
   }, [open]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open && !showAll) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     function onKey(e) {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        if (showAll) setShowAll(false);
+        else setOpen(false);
+      }
     }
     function onClick(e) {
+      if (showAll) return;
       const t = e.target;
       if (wrapRef.current?.contains(t) || panelRef.current?.contains(t)) return;
       setOpen(false);
@@ -152,7 +181,7 @@ export default function NotificationCenter() {
       window.removeEventListener('mousedown', onClick);
       window.removeEventListener('touchstart', onClick);
     };
-  }, [open]);
+  }, [open, showAll]);
 
   async function markAll() {
     try {
@@ -164,6 +193,8 @@ export default function NotificationCenter() {
   }
 
   const unread = items.filter((i) => !i.readAt).length;
+  const previewItems = items.slice(0, DROPDOWN_LIMIT);
+  const hasMore = items.length > DROPDOWN_LIMIT;
 
   return (
     <div className="notif-wrap" ref={wrapRef}>
@@ -173,7 +204,10 @@ export default function NotificationCenter() {
         aria-label="Bildirimler"
         aria-expanded={open}
         aria-haspopup="true"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setShowAll(false);
+          setOpen((o) => !o);
+        }}
       >
         <span className="notif-btn-label">Bildirim</span>
         <span className="notif-btn-ico" aria-hidden>
@@ -201,29 +235,60 @@ export default function NotificationCenter() {
               {unread > 0 && <span className="badge badge-warning">{unread} yeni</span>}
             </div>
             <div className="notif-scroll">
-              {items.length === 0 ? (
-                <p className="muted empty-mini">Bildirim yok</p>
-              ) : (
-                <ul className="notif-list">
-                  {items.slice(0, 30).map((n) => (
-                    <li key={n.id} className={!n.readAt ? 'unread' : 'read'}>
-                      <div className="notif-item-top">
-                        <strong>{n.title}</strong>
-                        <span className={`notif-state ${n.readAt ? 'read' : 'unread'}`}>
-                          {n.readAt ? 'Okundu' : 'Yeni'}
-                        </span>
-                      </div>
-                      <span>{n.body}</span>
-                      <small>{new Date(n.createdAt).toLocaleString('tr-TR')}</small>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <NotificationList items={previewItems} />
             </div>
-            <div className="notif-foot">
+            <div className="notif-foot notif-foot-stack">
+              {hasMore || items.length > 0 ? (
+                <button
+                  type="button"
+                  className="btn primary"
+                  onClick={() => {
+                    setOpen(false);
+                    setShowAll(true);
+                  }}
+                >
+                  Tüm Bildirimleri Gör
+                </button>
+              ) : null}
               <button type="button" className="btn ghost" onClick={markAll} disabled={!unread}>
                 Tümünü okundu yap
               </button>
+            </div>
+          </div>,
+          document.body
+        )}
+      {showAll &&
+        createPortal(
+          <div
+            className="notif-all-overlay"
+            role="presentation"
+            onClick={() => setShowAll(false)}
+          >
+            <div
+              className="notif-all-modal"
+              role="dialog"
+              aria-label="Tüm bildirimler"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="notif-head">
+                <strong>Tüm Bildirimler</strong>
+                <button
+                  type="button"
+                  className="btn ghost"
+                  aria-label="Kapat"
+                  onClick={() => setShowAll(false)}
+                >
+                  Kapat
+                </button>
+              </div>
+              <div className="notif-scroll notif-all-scroll">
+                <NotificationList items={items} />
+              </div>
+              <div className="notif-foot">
+                <button type="button" className="btn ghost" onClick={markAll} disabled={!unread}>
+                  Tümünü okundu yap
+                </button>
+              </div>
             </div>
           </div>,
           document.body

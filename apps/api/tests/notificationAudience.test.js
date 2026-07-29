@@ -34,6 +34,7 @@ describe('notificationAudience', () => {
     expect(isNotificationEventAllowed('office_user', 'ticket.preparing')).toBe(true);
     expect(isNotificationEventAllowed('office_user', 'ticket.delivered')).toBe(false);
     expect(isNotificationEventAllowed('office_user', 'ticket.unavailable')).toBe(true);
+    expect(isNotificationEventAllowed('office_user', 'ticket.kitchen_no_response')).toBe(true);
     expect(isNotificationEventAllowed('office_user', 'kitchen:new_ticket')).toBe(false);
     expect(isNotificationEventAllowed('office_user', 'kitchen:staff_call')).toBe(false);
     expect(isNotificationEventAllowed('office_user', 'admin.user_created')).toBe(false);

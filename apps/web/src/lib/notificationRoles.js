@@ -8,6 +8,7 @@ const OFFICE_EVENTS = new Set([
   'session.closed',
   'ticket.preparing',
   'ticket.unavailable',
+  'ticket.kitchen_no_response',
 ]);
 
 const KITCHEN_EVENTS = new Set([
