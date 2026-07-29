@@ -7,6 +7,7 @@ import { restoreSessionTimers } from './modules/orders/orders.domain.js';
 import { logger } from './common/logger.js';
 import { setSocketRuntime } from './common/runtime.js';
 import { assertProductionSecurityConfig } from './common/prodSecurity.js';
+import { bootstrapAdmin } from './common/bootstrapAdmin.js';
 
 assertProductionSecurityConfig();
 
@@ -34,6 +35,7 @@ const io = createSocketServer(server, corsOrigin);
 setSocketRuntime(io);
 
 async function start() {
+  await bootstrapAdmin();
   await restoreSessionTimers();
   server.listen(port, host, () => {
     logger.info(`API listening on ${host}:${port}`);

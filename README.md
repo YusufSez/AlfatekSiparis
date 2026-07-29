@@ -234,7 +234,10 @@ docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
 npm run db:seed -w apps/api
 ```
 
-> **Uyarı:** Seed ve demo hesaplar production için uygun değildir. Production’da seed çalıştırmayın; kullanıcıları admin panelinden oluşturun veya güvenli bir bootstrap prosedürü kullanın.
+> **Uyarı:** Seed ve demo hesaplar production için uygun değildir. Production’da seed çalıştırmayın.
+> İlk admin için `ADMIN_NAME` / `ADMIN_USERNAME` / `ADMIN_PASSWORD` bootstrap’ını kullanın
+> (`NODE_ENV=production`, ayrıntılar: [docs/RENDER_ENV.md](docs/RENDER_ENV.md)).
+> Bootstrap sonrası bu env değişkenlerini kaldırın.
 
 ### Yedek (SQLite)
 
