@@ -71,6 +71,7 @@ export default function AdminProfilePage() {
   }
 
   const u = profile?.user || user;
+  const isAdmin = u?.role === 'admin';
   const stats = profile?.stats;
 
   if (booting) return <Skeleton rows={8} />;
@@ -97,24 +98,26 @@ export default function AdminProfilePage() {
         </div>
       </section>
 
-      <section className="dash-grid profile-stats">
-        <div className="dash-card">
-          <span>Katıldığı sipariş</span>
-          <strong>{stats?.joinedSessions ?? '—'}</strong>
-        </div>
-        <div className="dash-card">
-          <span>Açtığı sipariş</span>
-          <strong>{stats?.openedSessions ?? '—'}</strong>
-        </div>
-        <div className="dash-card">
-          <span>En çok istediği</span>
-          <strong>
-            {stats?.topProduct
-              ? `${iconMeta(stats.topProduct.icon || 'cup').emoji} ${stats.topProduct.name}`
-              : '—'}
-          </strong>
-        </div>
-      </section>
+      {!isAdmin && (
+        <section className="dash-grid profile-stats">
+          <div className="dash-card">
+            <span>Katıldığı sipariş</span>
+            <strong>{stats?.joinedSessions ?? '—'}</strong>
+          </div>
+          <div className="dash-card">
+            <span>Açtığı sipariş</span>
+            <strong>{stats?.openedSessions ?? '—'}</strong>
+          </div>
+          <div className="dash-card">
+            <span>En çok istediği</span>
+            <strong>
+              {stats?.topProduct
+                ? `${iconMeta(stats.topProduct.icon || 'cup').emoji} ${stats.topProduct.name}`
+                : '—'}
+            </strong>
+          </div>
+        </section>
+      )}
 
       <section className="card-surface">
         <h3 className="form-title">Tema</h3>
