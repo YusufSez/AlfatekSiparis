@@ -16,6 +16,7 @@ const { initCrashLogging, logStartup } = require('./crashLog');
 initCrashLogging();
 
 const DEV_URL = 'http://127.0.0.1:5173';
+const DEFAULT_PRODUCTION_URL = 'https://alfateksiparis-1.onrender.com';
 
 /** @type {BrowserWindow | null} */
 let mainWindow = null;
@@ -54,26 +55,37 @@ function writeSettings(partial) {
   return next;
 }
 
+function usableHttpUrl(raw) {
+  const url = String(raw || '').trim();
+  if (!url) return '';
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') return url;
+  } catch {
+    /* ignore */
+  }
+  return '';
+}
+
 function readBakedStartUrl() {
   try {
     const cfg = require('./start-url.json');
-    const url = String(cfg?.url || '').trim();
-    return url || '';
+    return usableHttpUrl(cfg?.url);
   } catch {
     return '';
   }
 }
 
 function resolveStartUrl() {
-  const fromEnv = String(process.env.DESKTOP_START_URL || '').trim();
+  const fromEnv = usableHttpUrl(process.env.DESKTOP_START_URL);
   if (fromEnv) return fromEnv;
   if (!app.isPackaged) return DEV_URL;
   const baked = readBakedStartUrl();
   if (baked) return baked;
   console.error(
-    '[desktop] Packaged build has no DESKTOP_START_URL. Rebuild with DESKTOP_START_URL set.'
+    `[desktop] Packaged build has no start URL — using production fallback: ${DEFAULT_PRODUCTION_URL}`
   );
-  return DEV_URL;
+  return DEFAULT_PRODUCTION_URL;
 }
 
 function trayHintFlagPath() {
