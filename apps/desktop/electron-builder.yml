@@ -12,6 +12,7 @@ files:
   - preload.js
   - package.json
   - start-url.json
+  - assets/**/*
 
 win:
   target:

@@ -1,7 +1,55 @@
-const { app, BrowserWindow, shell } = require('electron');
+const {
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  nativeImage,
+  shell,
+  ipcMain,
+  Notification,
+  session,
+} = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 const DEV_URL = 'http://127.0.0.1:5173';
+
+/** @type {BrowserWindow | null} */
+let mainWindow = null;
+/** @type {Tray | null} */
+let tray = null;
+let isQuitting = false;
+/** @type {ReturnType<typeof setInterval> | null} */
+let trayBlinkTimer = null;
+let trayAlertActive = false;
+
+const SETTINGS_DEFAULTS = {
+  openAtLogin: true,
+};
+
+function settingsPath() {
+  return path.join(app.getPath('userData'), 'desktop-settings.json');
+}
+
+function readSettings() {
+  try {
+    const raw = fs.readFileSync(settingsPath(), 'utf8');
+    const parsed = JSON.parse(raw);
+    return { ...SETTINGS_DEFAULTS, ...parsed };
+  } catch {
+    return { ...SETTINGS_DEFAULTS };
+  }
+}
+
+function writeSettings(partial) {
+  const next = { ...readSettings(), ...partial };
+  try {
+    fs.writeFileSync(settingsPath(), `${JSON.stringify(next, null, 2)}\n`, 'utf8');
+  } catch (err) {
+    console.warn('[desktop] settings write failed', err?.message || err);
+  }
+  return next;
+}
 
 function readBakedStartUrl() {
   try {
@@ -25,7 +73,304 @@ function resolveStartUrl() {
   return DEV_URL;
 }
 
+function trayHintFlagPath() {
+  return path.join(app.getPath('userData'), 'tray-hint-shown');
+}
+
+function hasShownTrayHint() {
+  try {
+    return fs.existsSync(trayHintFlagPath());
+  } catch {
+    return false;
+  }
+}
+
+function markTrayHintShown() {
+  try {
+    fs.writeFileSync(trayHintFlagPath(), '1', 'utf8');
+  } catch (err) {
+    console.warn('[desktop] could not persist tray hint flag', err?.message || err);
+  }
+}
+
+function loadTrayImage(fileName) {
+  const iconPath = path.join(__dirname, 'assets', fileName);
+  const image = nativeImage.createFromPath(iconPath);
+  if (!image.isEmpty()) return image;
+  console.warn('[desktop] tray icon missing or invalid:', iconPath);
+  return nativeImage.createEmpty();
+}
+
+function resolveTrayIcon() {
+  const image = loadTrayImage('tray-icon.png');
+  if (!image.isEmpty()) return image;
+  return nativeImage.createFromDataURL(
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAMElEQVRYhe3OMQEAAAjDMMC/52ECkg7W0UzN1gEAAAAAAAAAAAAAAAAAAAAA4G0B1vAAAdk5uG8AAAAASUVORK5CYII='
+  );
+}
+
+function resolveTrayAlertIcon() {
+  const image = loadTrayImage('tray-icon-alert.png');
+  return image.isEmpty() ? resolveTrayIcon() : image;
+}
+
+function applyAutoLaunch(enabled) {
+  const openAtLogin = Boolean(enabled);
+  writeSettings({ openAtLogin });
+
+  const settings = {
+    openAtLogin,
+    openAsHidden: false,
+  };
+
+  if (!app.isPackaged) {
+    // Dev: point login item at electron.exe + this app entry
+    settings.path = process.execPath;
+    settings.args = [path.resolve(__dirname)];
+  }
+
+  app.setLoginItemSettings(settings);
+  return openAtLogin;
+}
+
+function syncAutoLaunchFromSettings() {
+  const { openAtLogin } = readSettings();
+  applyAutoLaunch(openAtLogin);
+  return openAtLogin;
+}
+
+function stopTrayAttention() {
+  trayAlertActive = false;
+  if (trayBlinkTimer) {
+    clearInterval(trayBlinkTimer);
+    trayBlinkTimer = null;
+  }
+  if (tray && !tray.isDestroyed?.()) {
+    try {
+      tray.setImage(resolveTrayIcon());
+      tray.setToolTip('Alfatek Ofis Sipariş');
+    } catch {
+      /* ignore */
+    }
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.flashFrame(false);
+  }
+}
+
+function startTrayAttention() {
+  if (!tray) return;
+  trayAlertActive = true;
+  const normal = resolveTrayIcon();
+  const alert = resolveTrayAlertIcon();
+  let flip = false;
+  if (trayBlinkTimer) clearInterval(trayBlinkTimer);
+  tray.setToolTip('Alfatek Ofis Sipariş — yeni bildirim');
+  trayBlinkTimer = setInterval(() => {
+    if (!tray || !trayAlertActive) return;
+    flip = !flip;
+    try {
+      tray.setImage(flip ? alert : normal);
+    } catch {
+      /* ignore */
+    }
+  }, 600);
+
+  if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+    mainWindow.flashFrame(true);
+  }
+}
+
+function showMainWindow() {
+  stopTrayAttention();
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function hideToTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.hide();
+
+  if (!hasShownTrayHint() && tray && process.platform === 'win32') {
+    try {
+      tray.displayBalloon({
+        title: 'Alfatek Ofis Sipariş',
+        content: 'Alfatek arka planda çalışmaya devam ediyor.',
+        iconType: 'info',
+      });
+    } catch (err) {
+      console.warn('[desktop] tray balloon failed', err?.message || err);
+    }
+    markTrayHintShown();
+  }
+}
+
+function quitApp() {
+  isQuitting = true;
+  stopTrayAttention();
+  app.quit();
+}
+
+function buildTrayMenu() {
+  const { openAtLogin } = readSettings();
+  return Menu.buildFromTemplate([
+    {
+      label: 'Aç',
+      click: () => showMainWindow(),
+    },
+    {
+      label: 'Yenile',
+      click: () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.reload();
+        }
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Windows açıldığında otomatik başlat',
+      type: 'checkbox',
+      checked: openAtLogin,
+      click: (item) => {
+        applyAutoLaunch(item.checked);
+        if (tray) tray.setContextMenu(buildTrayMenu());
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Çıkış',
+      click: () => quitApp(),
+    },
+  ]);
+}
+
+function createTray() {
+  if (tray) return tray;
+
+  tray = new Tray(resolveTrayIcon());
+  tray.setToolTip('Alfatek Ofis Sipariş');
+  tray.setContextMenu(buildTrayMenu());
+
+  tray.on('double-click', () => {
+    showMainWindow();
+  });
+
+  return tray;
+}
+
+function showNativeNotification({ title, body, tag } = {}) {
+  if (!Notification.isSupported()) {
+    startTrayAttention();
+    return;
+  }
+
+  const n = new Notification({
+    title: title || 'Alfatek',
+    body: body || '',
+    silent: false,
+  });
+
+  n.on('click', () => {
+    showMainWindow();
+  });
+
+  n.show();
+  startTrayAttention();
+
+  // tag reserved for future dedupe
+  void tag;
+}
+
+function installPageHooks(win) {
+  // Runs in the page world (contextIsolation-safe via exposed bridge).
+  const script = `
+    (function () {
+      if (window.__alfatekDesktopHooksInstalled) return;
+      window.__alfatekDesktopHooksInstalled = true;
+
+      var DesktopNotify = window.desktop && window.desktop.notify;
+      var DesktopAttention = window.desktop && window.desktop.attention;
+
+      if (typeof DesktopNotify === 'function') {
+        var NativeNotification = window.Notification;
+        window.Notification = function (title, options) {
+          options = options || {};
+          try {
+            DesktopNotify({
+              title: String(title || ''),
+              body: String(options.body || ''),
+              tag: options.tag ? String(options.tag) : ''
+            });
+          } catch (e) {}
+          return {
+            close: function () {},
+            addEventListener: function () {},
+            removeEventListener: function () {},
+            onclick: null,
+            onshow: null,
+            onerror: null,
+            onclose: null
+          };
+        };
+        window.Notification.permission = 'granted';
+        window.Notification.requestPermission = function () {
+          return Promise.resolve('granted');
+        };
+        if (NativeNotification) {
+          window.Notification.maxActions = NativeNotification.maxActions;
+        }
+      }
+
+      function watchToasts() {
+        var root = document.querySelector('.toast-stack') || document.body;
+        if (!root || typeof MutationObserver === 'undefined') return;
+        var obs = new MutationObserver(function (mutations) {
+          if (document.visibilityState === 'visible' && document.hasFocus && document.hasFocus()) {
+            return;
+          }
+          for (var i = 0; i < mutations.length; i++) {
+            if (mutations[i].addedNodes && mutations[i].addedNodes.length) {
+              try { if (DesktopAttention) DesktopAttention(); } catch (e) {}
+              try {
+                if (DesktopNotify && document.visibilityState !== 'visible') {
+                  var node = mutations[i].addedNodes[0];
+                  var text = (node && node.textContent) ? String(node.textContent).trim() : '';
+                  if (text) {
+                    DesktopNotify({ title: 'Alfatek', body: text.slice(0, 180), tag: 'toast' });
+                  }
+                }
+              } catch (e2) {}
+              break;
+            }
+          }
+        });
+        obs.observe(root, { childList: true, subtree: true });
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', watchToasts);
+      } else {
+        watchToasts();
+      }
+    })();
+  `;
+
+  win.webContents
+    .executeJavaScript(script, true)
+    .catch((err) => console.warn('[desktop] page hooks failed', err?.message || err));
+}
+
 function createWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    showMainWindow();
+    return mainWindow;
+  }
+
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -41,6 +386,8 @@ function createWindow() {
     },
   });
 
+  mainWindow = win;
+
   win.once('ready-to-show', () => win.show());
 
   const startUrl = resolveStartUrl();
@@ -48,7 +395,29 @@ function createWindow() {
     console.error('[desktop] failed to load', startUrl, err?.message || err);
   });
 
-  // Open http(s) links outside the app shell
+  win.webContents.on('did-finish-load', () => {
+    installPageHooks(win);
+  });
+
+  win.on('focus', () => {
+    stopTrayAttention();
+  });
+
+  win.on('show', () => {
+    stopTrayAttention();
+  });
+
+  // X / taskbar close → hide to tray (keep process + page alive for sockets)
+  win.on('close', (event) => {
+    if (isQuitting) return;
+    event.preventDefault();
+    hideToTray();
+  });
+
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
+
   win.webContents.setWindowOpenHandler(({ url }) => {
     try {
       const parsed = new URL(url);
@@ -75,16 +444,61 @@ function createWindow() {
       event.preventDefault();
     }
   });
+
+  return win;
 }
 
-app.whenReady().then(() => {
-  createWindow();
+function registerIpc() {
+  ipcMain.handle('desktop:get-auto-launch', () => readSettings().openAtLogin);
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  ipcMain.handle('desktop:set-auto-launch', (_event, enabled) => {
+    const next = applyAutoLaunch(enabled);
+    if (tray) tray.setContextMenu(buildTrayMenu());
+    return next;
   });
-});
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
+  ipcMain.on('desktop:notify', (_event, payload) => {
+    showNativeNotification(payload || {});
+  });
+
+  ipcMain.on('desktop:attention', () => {
+    startTrayAttention();
+  });
+}
+
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    showMainWindow();
+  });
+
+  app.whenReady().then(() => {
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      if (permission === 'notifications') {
+        callback(true);
+        return;
+      }
+      callback(false);
+    });
+
+    registerIpc();
+    syncAutoLaunchFromSettings();
+    createTray();
+    createWindow();
+
+    app.on('activate', () => {
+      showMainWindow();
+    });
+  });
+
+  app.on('window-all-closed', () => {
+    /* tray owns lifetime on Windows */
+  });
+
+  app.on('before-quit', () => {
+    isQuitting = true;
+    stopTrayAttention();
+  });
+}

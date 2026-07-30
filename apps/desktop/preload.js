@@ -1,9 +1,17 @@
-const { contextBridge } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 /**
- * Minimal, safe bridge. React app does not need to call this —
- * exposed only so the shell can be detected later without Node access.
+ * Secure bridge only — no Node APIs exposed to the page.
+ * React/web sources are unchanged; page hooks call these from injected script.
  */
 contextBridge.exposeInMainWorld('desktop', {
   isElectron: true,
+  notify: (payload) => {
+    ipcRenderer.send('desktop:notify', payload || {});
+  },
+  attention: () => {
+    ipcRenderer.send('desktop:attention');
+  },
+  getAutoLaunch: () => ipcRenderer.invoke('desktop:get-auto-launch'),
+  setAutoLaunch: (enabled) => ipcRenderer.invoke('desktop:set-auto-launch', Boolean(enabled)),
 });
