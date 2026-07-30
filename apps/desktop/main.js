@@ -11,6 +11,9 @@ const {
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { initCrashLogging, logStartup } = require('./crashLog');
+
+initCrashLogging();
 
 const DEV_URL = 'http://127.0.0.1:5173';
 
@@ -101,17 +104,30 @@ function loadTrayImage(fileName) {
   return nativeImage.createEmpty();
 }
 
+function resolveAppIcon() {
+  const ico = loadTrayImage('app-icon.ico');
+  if (!ico.isEmpty()) return ico;
+  return loadTrayImage('tray-icon.png');
+}
+
 function resolveTrayIcon() {
-  const image = loadTrayImage('tray-icon.png');
-  if (!image.isEmpty()) return image;
+  // Prefer shared favicon (.ico) on Windows tray; fall back to PNG placeholder
+  const fromFavicon = loadTrayImage('app-icon.ico');
+  if (!fromFavicon.isEmpty()) {
+    const sized = fromFavicon.resize({ width: 16, height: 16 });
+    return sized.isEmpty() ? fromFavicon : sized;
+  }
+  const png = loadTrayImage('tray-icon.png');
+  if (!png.isEmpty()) return png;
   return nativeImage.createFromDataURL(
     'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAMElEQVRYhe3OMQEAAAjDMMC/52ECkg7W0UzN1gEAAAAAAAAAAAAAAAAAAAAA4G0B1vAAAdk5uG8AAAAASUVORK5CYII='
   );
 }
 
 function resolveTrayAlertIcon() {
-  const image = loadTrayImage('tray-icon-alert.png');
-  return image.isEmpty() ? resolveTrayIcon() : image;
+  const png = loadTrayImage('tray-icon-alert.png');
+  if (!png.isEmpty()) return png;
+  return resolveTrayIcon();
 }
 
 function applyAutoLaunch(enabled) {
@@ -371,6 +387,7 @@ function createWindow() {
     return mainWindow;
   }
 
+  const appIcon = resolveAppIcon();
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -378,6 +395,7 @@ function createWindow() {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
+    ...(appIcon && !appIcon.isEmpty() ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -475,6 +493,8 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    logStartup({ startUrl: resolveStartUrl() });
+
     session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
       if (permission === 'notifications') {
         callback(true);

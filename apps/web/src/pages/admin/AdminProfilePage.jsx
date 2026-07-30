@@ -12,6 +12,7 @@ import { Skeleton, EmptyState } from '../../components/LoadStates';
 import { formatDateTime } from '../../lib/format';
 import { iconMeta, roleHint, roleLabel } from '../../lib/uxLabels';
 import PushNotificationSettings from '../../components/PushNotificationSettings';
+import DesktopAppSettings from '../../components/DesktopAppSettings';
 import AvatarEditor from '../../components/AvatarEditor';
 import { getOrderSoundEnabled, setOrderSoundEnabled } from '../../lib/orderSound';
 
@@ -154,6 +155,8 @@ export default function AdminProfilePage() {
           </Button>
         </div>
       </section>
+
+      <DesktopAppSettings />
 
       <PushNotificationSettings />
 

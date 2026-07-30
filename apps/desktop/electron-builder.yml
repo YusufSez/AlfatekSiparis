@@ -7,14 +7,20 @@ directories:
   output: dist
   buildResources: build
 
+# ≥256px required by electron-builder. Source: apps/web/public/pwa-512.png
+# Window/tray runtime icon: assets/app-icon.ico (copy of apps/web/public/favicon.ico)
+icon: build/icon.png
+
 files:
   - main.js
   - preload.js
+  - crashLog.js
   - package.json
   - start-url.json
   - assets/**/*
 
 win:
+  icon: build/icon.png
   target:
     - target: nsis
       arch:

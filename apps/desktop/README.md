@@ -1,6 +1,6 @@
 # Desktop (Electron shell)
 
-İnce Electron kabuğu — mevcut web uygulamasını masaüstünde açar. API / React / PWA kaynak koduna dokunulmaz.
+İnce Electron kabuğu — mevcut web uygulamasını masaüstünde açar.
 
 ## Geliştirme
 
@@ -29,36 +29,40 @@ npm run desktop:dist
 
 Unpackaged: `npm run desktop:build`
 
-## Masaüstü özellikleri
+## Profil — Masaüstü ayarları
 
-### Tray
-- **X** → pencere gizlenir, process + sayfa (Socket) canlı kalır
-- Sağ tık: **Aç** / **Yenile** / **Windows açıldığında otomatik başlat** / **Çıkış**
+Profil sayfasındaki **"Masaüstü Uygulaması"** kartı **yalnızca Electron** içinde görünür.
+
+- Tespit: `window.desktop.isElectron` (preload contextBridge) — userAgent kullanılmaz
+- Tarayıcı / Chrome / Edge / Safari / Android PWA / iOS PWA bu kartı **görmez**
+- Ayar: **Windows açıldığında otomatik başlat** → `getAutoLaunch()` / `setAutoLaunch()`
+- Varsayılan: **açık**
+- Aynı tercih tray menü checkbox ile de yönetilebilir
+
+## Tray
+
+- **X** → gizle (process + Socket canlı)
+- Sağ tık: Aç / Yenile / Otomatik başlat / Çıkış
 - Çift tık → pencereyi göster
-- İlk gizlemede bir kez balon: *“Alfatek arka planda çalışmaya devam ediyor.”*
-- Yeni bildirimde tray ikonu yanıp söner; pencere açılınca/odaklanınca durur
+- İlk gizlemede bir kez balon ipucu
+- Yeni bildirimde tray ikonu yanıp söner
 
-### Otomatik başlatma
-- Varsayılan: **açık** (`app.setLoginItemSettings`)
-- Tercih: tray menü checkbox (userData: `desktop-settings.json`)
-- Not: Profil sayfası UI’si `apps/web`’e dokunulmadığı için tray üzerinden yönetilir; ileride `window.desktop.getAutoLaunch/setAutoLaunch` ile Profile’a bağlanabilir
+## İkonlar
 
-### Native bildirim
-- Sayfa `Notification` API’si Electron `Notification`’a yönlendirilir (preload + inject)
-- Tıklanınca pencere öne gelir
-- Push / Socket / NotificationCenter kodu değişmez
+Yeni tasarım üretilmez; projedeki mevcut asset’ler kullanılır.
 
-### Tek instance
-- İkinci açılış mevcut pencereyi öne getirir
-
-### Tray ikonları (placeholder)
-
-| Dosya | Kullanım |
+| Kullanım | Kaynak |
 |---|---|
-| `apps/desktop/assets/tray-icon.png` | Normal (32×32) |
-| `apps/desktop/assets/tray-icon-alert.png` | Uyarı / blink |
+| Pencere / görev çubuğu / tray (runtime) | `apps/web/public/favicon.ico` → `apps/desktop/assets/app-icon.ico` |
+| NSIS / exe / masaüstü & başlat kısayolları | `apps/web/public/pwa-512.png` → `apps/desktop/build/icon.png` (≥256px zorunlu; favicon 48×48) |
+| Tray uyarı blink | `apps/desktop/assets/tray-icon-alert.png` |
 
-Üretimde aynı yolları gerçek marka ikonlarıyla değiştirin.
+Yenileme:
+
+```powershell
+Copy-Item -Force apps\web\public\favicon.ico apps\desktop\assets\app-icon.ico
+Copy-Item -Force apps\web\public\pwa-512.png apps\desktop\build\icon.png
+```
 
 ## Güvenlik
 
