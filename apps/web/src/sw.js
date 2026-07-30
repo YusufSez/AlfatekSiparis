@@ -11,7 +11,12 @@ precacheAndRoute(self.__WB_MANIFEST || []);
 cleanupOutdatedCaches();
 
 try {
-  registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html')));
+  registerRoute(
+    new NavigationRoute(createHandlerBoundToURL('/index.html'), {
+      // Installers must hit nginx/static — never SPA index.html fallback.
+      denylist: [/^\/downloads\//i],
+    })
+  );
 } catch {
   /* ignore if index not in manifest during dev */
 }
