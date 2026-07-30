@@ -3,9 +3,20 @@ import Button from '../components/ui/Button';
 import { useAuth } from '../lib/auth';
 import { isElectronDesktop } from '../lib/desktop';
 
-/** Update these when CDN / release URLs are final. */
-export const WINDOWS_DOWNLOAD_URL = 'https://download.alfatek.com/windows';
-export const MAC_DOWNLOAD_URL = 'https://download.alfatek.com/mac';
+const WINDOWS_INSTALLER = 'Alfatek-Setup.exe';
+const MAC_INSTALLER = 'Alfatek.dmg';
+
+/**
+ * Domain-agnostic installer URLs for the current host.
+ * @param {string} [origin]
+ */
+export function getDesktopDownloadUrls(origin = typeof window !== 'undefined' ? window.location.origin : '') {
+  const baseUrl = origin;
+  return {
+    windows: `${baseUrl}/downloads/${WINDOWS_INSTALLER}`,
+    mac: `${baseUrl}/downloads/${MAC_INSTALLER}`,
+  };
+}
 
 const WINDOWS_FEATURES = [
   'Otomatik bildirim',
@@ -72,6 +83,7 @@ export default function DesktopDownloadPage() {
   const { logout } = useAuth();
   const inElectron = isElectronDesktop();
   const os = detectDesktopOs();
+  const { windows: windowsDownloadUrl, mac: macDownloadUrl } = getDesktopDownloadUrls();
 
   return (
     <div className="page">
@@ -95,7 +107,7 @@ export default function DesktopDownloadPage() {
               <DownloadCard
                 heading="Windows"
                 ctaLabel="Windows için indir"
-                href={WINDOWS_DOWNLOAD_URL}
+                href={windowsDownloadUrl}
                 features={WINDOWS_FEATURES}
               />
             )}
@@ -103,7 +115,7 @@ export default function DesktopDownloadPage() {
               <DownloadCard
                 heading="macOS"
                 ctaLabel="macOS için indir"
-                href={MAC_DOWNLOAD_URL}
+                href={macDownloadUrl}
                 features={MAC_FEATURES}
               />
             )}
@@ -118,13 +130,13 @@ export default function DesktopDownloadPage() {
                 <DownloadCard
                   heading="Windows"
                   ctaLabel="Windows için indir"
-                  href={WINDOWS_DOWNLOAD_URL}
+                  href={windowsDownloadUrl}
                   features={WINDOWS_FEATURES}
                 />
                 <DownloadCard
                   heading="macOS"
                   ctaLabel="macOS için indir"
-                  href={MAC_DOWNLOAD_URL}
+                  href={macDownloadUrl}
                   features={MAC_FEATURES}
                 />
               </div>
