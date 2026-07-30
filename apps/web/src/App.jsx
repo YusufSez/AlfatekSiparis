@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import OfficePage from './pages/OfficePage';
 import KitchenPage from './pages/KitchenPage';
 import ProfilePage from './pages/ProfilePage';
+import DesktopDownloadPage from './pages/DesktopDownloadPage';
 import ForbiddenPage from './pages/ForbiddenPage';
 import ForcePasswordChangePage from './pages/ForcePasswordChangePage';
 
@@ -119,6 +120,14 @@ export default function App() {
         element={
           <Guard>
             {user?.role === 'admin' ? <Navigate to="/admin/profile" replace /> : <ProfilePage />}
+          </Guard>
+        }
+      />
+      <Route
+        path="/desktop"
+        element={
+          <Guard>
+            <DesktopDownloadPage />
           </Guard>
         }
       />

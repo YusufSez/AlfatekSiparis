@@ -20,7 +20,9 @@
     "test:coverage": "npm run test:coverage -w apps/api",
     "desktop:dev": "npm run dev -w apps/desktop",
     "desktop:build": "npm run build -w apps/desktop",
-    "desktop:dist": "npm run dist -w apps/desktop"
+    "desktop:dist": "npm run dist -w apps/desktop",
+    "desktop:dist:win": "npm run dist:win -w apps/desktop",
+    "desktop:dist:mac": "npm run dist:mac -w apps/desktop"
   },
   "devDependencies": {
     "concurrently": "^10.0.4"

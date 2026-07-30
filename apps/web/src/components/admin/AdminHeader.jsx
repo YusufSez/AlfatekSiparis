@@ -34,7 +34,9 @@ export default function AdminHeader({ breadcrumb = [], onSearch, searchValue, on
           onClick={() => theme.toggle()}
           aria-label={theme.isDark ? 'Açık tema' : 'Koyu tema'}
         >
-          {theme.isDark ? '☀' : '🌙'}
+          <span className="theme-toggle-ico" aria-hidden>
+            {theme.isDark ? '☀️' : '🌙'}
+          </span>
         </button>
         <Link to="/admin/profile" className="profile-chip admin-profile-chip" title="Profil">
           <Avatar name={user?.name} avatarUrl={user?.avatarUrl} />

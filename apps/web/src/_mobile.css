@@ -174,8 +174,15 @@
   display: inline;
 }
 
+.notif-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .notif-btn-ico {
-  display: none;
+  display: inline;
+  font-size: 1.05rem;
 }
 
 /* ---- 1024 ---- */
@@ -217,6 +224,20 @@
 
   .notif-btn {
     min-width: 44px;
+  }
+
+  .nav-desktop-btn-label {
+    display: none;
+  }
+
+  .nav-desktop-btn-ico {
+    display: inline;
+  }
+
+  .nav-desktop-btn {
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
   }
 
   .dash-grid,
@@ -516,6 +537,7 @@
 
   .nav-actions .theme-toggle,
   .nav-actions .notif-btn,
+  .nav-actions .nav-desktop-btn,
   .nav-menu-btn {
     min-width: 44px;
     min-height: 44px;

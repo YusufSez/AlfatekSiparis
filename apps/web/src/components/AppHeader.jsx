@@ -12,6 +12,7 @@ const LINK_META = {
   '/office': { icon: '🛒', short: 'Sipariş' },
   '/kitchen': { icon: '🍳', short: 'Mutfak' },
   '/admin/dashboard': { icon: '⚙️', short: 'Admin' },
+  '/desktop': { icon: '💻', short: 'Masaüstü' },
   '/profile': { icon: '👤', short: 'Profil' },
 };
 
@@ -57,6 +58,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
 
   function renderNavLink(l, className) {
     const meta = LINK_META[l.to] || { icon: '•', short: l.label };
+    const isBottom = className.includes('bottom-nav');
     return (
       <NavLink
         key={l.to}
@@ -68,7 +70,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
         <span className="nav-link-ico" aria-hidden>
           {meta.icon}
         </span>
-        <span className="nav-link-label">{l.label}</span>
+        <span className="nav-link-label">{isBottom ? meta.short : l.label}</span>
       </NavLink>
     );
   }
@@ -101,6 +103,19 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
           </nav>
 
           <div className="nav-actions">
+            <NavLink
+              to="/desktop"
+              className={({ isActive }) =>
+                `btn ghost nav-desktop-btn ${isActive ? 'active' : ''}`
+              }
+              title="Masaüstü Uygulaması"
+              aria-label="Masaüstü Uygulaması"
+            >
+              <span className="nav-desktop-btn-ico" aria-hidden>
+                💻
+              </span>
+              <span className="nav-desktop-btn-label">Masaüstü Uygulaması</span>
+            </NavLink>
             <NotificationCenter />
             <button
               type="button"
@@ -109,7 +124,9 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
               aria-label={theme.isDark ? 'Açık temaya geç' : 'Koyu temaya geç'}
               title={theme.isDark ? 'Açık tema' : 'Koyu tema'}
             >
-              {theme.isDark ? '☀' : '🌙'}
+              <span className="theme-toggle-ico" aria-hidden>
+                {theme.isDark ? '☀️' : '🌙'}
+              </span>
             </button>
 
             <div className="nav-user-card">
@@ -132,6 +149,9 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
             </div>
 
             <button type="button" className="btn ghost nav-logout-btn" onClick={onLogout}>
+              <span className="nav-logout-ico" aria-hidden>
+                🚪
+              </span>
               <span className="nav-logout-label">Çıkış</span>
             </button>
 

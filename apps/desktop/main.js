@@ -212,7 +212,9 @@ function hideToTray() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.hide();
 
-  if (!hasShownTrayHint() && tray && process.platform === 'win32') {
+  if (hasShownTrayHint()) return;
+
+  if (process.platform === 'win32' && tray) {
     try {
       tray.displayBalloon({
         title: 'Alfatek Ofis Sipariş',
@@ -223,6 +225,19 @@ function hideToTray() {
       console.warn('[desktop] tray balloon failed', err?.message || err);
     }
     markTrayHintShown();
+  } else if (process.platform === 'darwin' && Notification.isSupported()) {
+    // Windows balloon is win32-only; macOS uses a one-time native notification.
+    try {
+      const n = new Notification({
+        title: 'Alfatek Ofis Sipariş',
+        body: 'Alfatek arka planda çalışmaya devam ediyor.',
+        silent: true,
+      });
+      n.show();
+    } catch (err) {
+      console.warn('[desktop] mac hide hint failed', err?.message || err);
+    }
+    markTrayHintShown();
   }
 }
 
@@ -230,6 +245,12 @@ function quitApp() {
   isQuitting = true;
   stopTrayAttention();
   app.quit();
+}
+
+function autoLaunchMenuLabel() {
+  return process.platform === 'darwin'
+    ? 'Açılışta otomatik başlat'
+    : 'Windows açıldığında otomatik başlat';
 }
 
 function buildTrayMenu() {
@@ -249,7 +270,7 @@ function buildTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Windows açıldığında otomatik başlat',
+      label: autoLaunchMenuLabel(),
       type: 'checkbox',
       checked: openAtLogin,
       click: (item) => {
@@ -272,9 +293,17 @@ function createTray() {
   tray.setToolTip('Alfatek Ofis Sipariş');
   tray.setContextMenu(buildTrayMenu());
 
+  // Windows: double-click restores (unchanged)
   tray.on('double-click', () => {
     showMainWindow();
   });
+
+  // macOS menu bar: single click restores (double-click is unreliable on darwin)
+  if (process.platform === 'darwin') {
+    tray.on('click', () => {
+      showMainWindow();
+    });
+  }
 
   return tray;
 }

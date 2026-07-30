@@ -10,7 +10,9 @@
     "prebuild": "node ./scripts/bake-start-url.js",
     "build": "electron-builder --dir",
     "predist": "node ./scripts/bake-start-url.js",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac"
   },
   "devDependencies": {
     "electron": "37.10.3",

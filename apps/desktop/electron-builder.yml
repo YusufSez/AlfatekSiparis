@@ -7,8 +7,9 @@ directories:
   output: dist
   buildResources: build
 
-# ≥256px required by electron-builder. Source: apps/web/public/pwa-512.png
-# Window/tray runtime icon: assets/app-icon.ico (copy of apps/web/public/favicon.ico)
+# ≥256px required by electron-builder (converts to .ico / .icns).
+# Source: apps/web/public/pwa-512.png → build/icon.png
+# Runtime window/tray: assets/app-icon.ico (from apps/web/public/favicon.ico)
 icon: build/icon.png
 
 files:
@@ -31,6 +32,25 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
+
+mac:
+  category: public.app-category.business
+  icon: build/icon.png
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+  # Notarization / Apple Developer signing is optional and done on a Mac host.
+  hardenedRuntime: false
+  gatekeeperAssess: false
+
+dmg:
+  artifactName: ${productName}-${version}-${arch}.${ext}
 
 # Runtime loads DESKTOP_START_URL (production SPA). Web dist is not bundled.
 extraMetadata:

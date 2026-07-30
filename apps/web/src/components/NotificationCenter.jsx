@@ -209,10 +209,10 @@ export default function NotificationCenter() {
           setOpen((o) => !o);
         }}
       >
-        <span className="notif-btn-label">Bildirim</span>
         <span className="notif-btn-ico" aria-hidden>
           🔔
         </span>
+        <span className="notif-btn-label">Bildirim</span>
         {unread > 0 && <span className="notif-count">{unread}</span>}
       </button>
       {open &&
