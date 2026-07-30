@@ -305,6 +305,14 @@ export default function ProfilePage() {
               busy={busy}
               onSubmit={changePassword}
             />
+
+            <section className="card-surface profile-logout-card">
+              <h3 className="form-title">Oturum</h3>
+              <p className="muted">Çıkış yapmak için aşağıdaki butonu kullanın.</p>
+              <Button type="button" variant="danger-ghost" className="profile-logout-btn" onClick={logout}>
+                Çıkış Yap
+              </Button>
+            </section>
           </div>
         )}
       </main>

@@ -868,8 +868,16 @@ html[data-theme='dark'] .announce-banner.sev-critical {
 
   .header-actions,
   .nav-actions {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     max-width: 100%;
+  }
+
+  .nav-actions .nav-user-card {
+    display: none;
+  }
+
+  .nav-logout-btn {
+    display: none !important;
   }
 }
 

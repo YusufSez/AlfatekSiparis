@@ -243,7 +243,7 @@ select {
   gap: 0.75rem;
   min-height: var(--nav-h);
   height: var(--nav-h);
-  padding: 0 1rem;
+  padding: 0 max(0.85rem, env(safe-area-inset-right, 0px)) 0 max(0.85rem, env(safe-area-inset-left, 0px));
   width: 100%;
   box-sizing: border-box;
 }
@@ -261,6 +261,7 @@ select {
   padding: 0;
   flex-shrink: 0;
   max-width: 42%;
+  margin-right: auto;
 }
 
 .nav-brand-text {
@@ -336,9 +337,12 @@ select {
 .nav-actions {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  justify-content: flex-end;
+  gap: 0.35rem;
   flex-shrink: 0;
   margin-left: auto;
+  flex-wrap: nowrap;
+  max-width: 100%;
 }
 
 .nav-desktop-btn {
@@ -4769,6 +4773,17 @@ html[data-theme='dark'] .stack-form textarea {
   border-color: transparent;
 }
 
+.btn.kitchen-action.office {
+  background: var(--office, var(--primary));
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--office, var(--primary)) 35%, transparent);
+}
+
+.btn.kitchen-action.office:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
 .btn.kitchen-action.success {
   background: var(--success);
   color: #fff;
@@ -4782,12 +4797,11 @@ html[data-theme='dark'] .stack-form textarea {
 }
 
 .ticket-card.kitchen-card.status-new,
-.ticket-card.big.status-new {
-  box-shadow: inset 4px 0 0 var(--warning);
-}
+.ticket-card.big.status-new,
 .ticket-card.kitchen-card.status-preparing,
 .ticket-card.big.status-preparing {
-  box-shadow: inset 4px 0 0 var(--info);
+  /* Status via pill only — avoid second brown/blue inset over office border */
+  box-shadow: var(--shadow);
 }
 
 /* Office chips */
@@ -5279,6 +5293,9 @@ html[data-theme='dark'] .table-select {
   position: relative;
   padding: 0.85rem 0.9rem 1rem;
   border-left-width: 6px;
+  background: var(--card);
+  background-color: var(--card);
+  box-shadow: var(--shadow);
 }
 
 .kitchen-office-banner {
@@ -5338,7 +5355,7 @@ html[data-theme='dark'] .table-select {
   padding: 0.65rem 0.7rem;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--office, var(--accent)) 6%, var(--card));
+  background: var(--card);
   min-height: 0;
 }
 
@@ -5359,9 +5376,9 @@ html[data-theme='dark'] .table-select {
   font-size: 0.9rem;
   line-height: 1.35;
   color: var(--ink);
-  background: color-mix(in srgb, var(--office, var(--accent)) 8%, var(--bg));
+  background: color-mix(in srgb, var(--ink) 3%, var(--card));
   border-radius: calc(var(--radius) - 2px);
-  border: 1px dashed color-mix(in srgb, var(--office, var(--accent)) 30%, var(--line));
+  border: 1px dashed var(--line);
 }
 
 .kitchen-summary-boxes .summary-notes li {
@@ -5395,7 +5412,7 @@ html[data-theme='dark'] .table-select {
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  color: var(--office, var(--accent));
+  color: var(--ink);
 }
 
 .ticket-card.kitchen-card .big-name,
@@ -6704,6 +6721,13 @@ html[data-theme='dark'] .special-request-input:focus {
   line-height: 1.35;
 }
 
-.desktop-download-active .form-title {
-  margin-bottom: 0.15rem;
+.profile-logout-card {
+  display: grid;
+  gap: 0.65rem;
 }
+
+.profile-logout-btn {
+  justify-self: start;
+  min-width: 10rem;
+}
+

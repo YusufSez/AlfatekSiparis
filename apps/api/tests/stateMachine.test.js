@@ -38,6 +38,19 @@ describe('STATE MACHINE', () => {
     expect(() => assertTransition('session', 'closed', 'sent')).toThrow(/Geçersiz/);
   });
 
+  it('new → cancelled (eksik ürün)', () => {
+    expect(canTransition('ticket', 'new', 'cancelled')).toBe(true);
+  });
+
+  it('preparing → cancelled', () => {
+    expect(canTransition('ticket', 'preparing', 'cancelled')).toBe(true);
+  });
+
+  it('cancelled terminal', () => {
+    expect(canTransition('ticket', 'cancelled', 'preparing')).toBe(false);
+    expect(TICKET_TRANSITIONS.cancelled).toEqual([]);
+  });
+
   it('geçersiz ticket transition', () => {
     expect(canTransition('ticket', 'new', 'delivered')).toBe(false);
     expect(canTransition('ticket', 'delivered', 'delivered')).toBe(false);
@@ -48,8 +61,9 @@ describe('STATE MACHINE', () => {
 
   it('transition tabloları sabit', () => {
     expect(SESSION_TRANSITIONS.collecting).toEqual(['sent', 'closed']);
-    expect(TICKET_TRANSITIONS.new).toEqual(['preparing']);
-    expect(TICKET_TRANSITIONS.preparing).toEqual(['delivered']);
+    expect(TICKET_TRANSITIONS.new).toEqual(['preparing', 'cancelled']);
+    expect(TICKET_TRANSITIONS.preparing).toEqual(['delivered', 'cancelled']);
     expect(TICKET_TRANSITIONS.delivered).toEqual(['preparing']);
+    expect(TICKET_TRANSITIONS.cancelled).toEqual([]);
   });
 });

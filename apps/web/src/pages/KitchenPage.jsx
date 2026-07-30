@@ -17,9 +17,10 @@ const STATUS_LABEL = {
   new: 'Bekliyor',
   preparing: 'Hazırlanıyor',
   delivered: 'Teslim',
+  cancelled: 'Hazırlanamadı',
 };
 
-const STATUS_RANK = { new: 0, preparing: 1, delivered: 2 };
+const STATUS_RANK = { new: 0, preparing: 1, delivered: 2, cancelled: 2 };
 
 const KitchenClockContext = createContext(Date.now());
 
@@ -226,7 +227,7 @@ export default function KitchenPage() {
 
   const applyTicketUpdate = useCallback((ticket) => {
     if (!ticket?.id) return;
-    if (ticket.status === 'delivered') {
+    if (ticket.status === 'delivered' || ticket.status === 'cancelled') {
       setLeaving((m) => ({ ...m, [ticket.id]: true }));
       scheduleTimeout(() => {
         setTickets((prev) => prev.filter((t) => t.id !== ticket.id));
@@ -470,11 +471,17 @@ export default function KitchenPage() {
     setShortageBusy(true);
     setError('');
     try {
-      await api(`/kitchen/tickets/${shortageTicket.id}/unavailable`, {
+      const data = await api(`/kitchen/tickets/${shortageTicket.id}/unavailable`, {
         method: 'POST',
         body: { items, note: shortageNote.trim() || null },
       });
-      toast.success('Eksik ürün bildirimi gönderildi');
+      const closed = Boolean(data?.report?.orderClosed);
+      if (closed && data?.report?.ticket) {
+        applyTicketUpdate(data.report.ticket);
+        toast.success('Sipariş eksik ürün nedeniyle kapatıldı');
+      } else {
+        toast.success('Eksik ürün bildirimi gönderildi');
+      }
       setShortageTicket(null);
       setShortageNote('');
       setShortageSelected({});
@@ -486,7 +493,7 @@ export default function KitchenPage() {
   }
 
   const nextAction = {
-    new: { status: 'preparing', label: '🟡 Hazırlamaya Başla', tone: 'warning' },
+    new: { status: 'preparing', label: 'Hazırlamaya Başla', tone: 'office' },
     preparing: { status: 'delivered', label: '🟢 Teslim Ettim', tone: 'success' },
   };
 

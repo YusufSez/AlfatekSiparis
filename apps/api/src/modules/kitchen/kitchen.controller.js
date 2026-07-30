@@ -12,7 +12,7 @@ router.get('/tickets', async (req, res, next) => {
   try {
     const status = req.query.status;
     const where =
-      status && ['new', 'preparing', 'delivered'].includes(String(status))
+      status && ['new', 'preparing', 'delivered', 'cancelled'].includes(String(status))
         ? { status: String(status) }
         : { status: { in: ['new', 'preparing'] } };
 
@@ -20,8 +20,11 @@ router.get('/tickets', async (req, res, next) => {
     const tickets = await prisma.kitchenTicket.findMany({
       where,
       include: { office: true },
-      orderBy: status === 'delivered' ? { updatedAt: 'desc' } : { createdAt: 'desc' },
-      take: status === 'delivered' ? Math.min(take, 20) : take,
+      orderBy:
+        status === 'delivered' || status === 'cancelled'
+          ? { updatedAt: 'desc' }
+          : { createdAt: 'desc' },
+      take: status === 'delivered' || status === 'cancelled' ? Math.min(take, 20) : take,
     });
     res.json({ tickets: tickets.map(serializeTicket) });
   } catch (err) {

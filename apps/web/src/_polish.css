@@ -170,6 +170,10 @@ html[data-theme='dark'] .btn.kitchen-action.warning {
   color: #1a1208;
 }
 
+html[data-theme='dark'] .btn.kitchen-action.office {
+  color: #fff;
+}
+
 html[data-theme='dark'] .data-table th {
   background: color-mix(in srgb, var(--primary) 10%, transparent);
   color: var(--muted);

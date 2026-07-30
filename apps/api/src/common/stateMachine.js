@@ -3,10 +3,11 @@ const SESSION_TRANSITIONS = {
 };
 
 const TICKET_TRANSITIONS = {
-  new: ['preparing'],
-  preparing: ['delivered'],
+  new: ['preparing', 'cancelled'],
+  preparing: ['delivered', 'cancelled'],
   /** UX undo within short window after deliver */
   delivered: ['preparing'],
+  cancelled: [],
 };
 
 export function canTransition(machine, from, to) {

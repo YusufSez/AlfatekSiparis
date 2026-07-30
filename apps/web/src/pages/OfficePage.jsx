@@ -290,6 +290,9 @@ function ticketToHistoryEntry(ticket) {
 
 function historyEntryFromApi(entry) {
   if (!entry) return null;
+  if (entry.kind === 'cancelled' && entry.ticket) {
+    return ticketToHistoryEntry({ ...entry.ticket, status: 'cancelled' });
+  }
   if (entry.kind === 'cancelled') {
     return {
       id: entry.sessionId,
@@ -429,7 +432,9 @@ function OrderHistoryAccordion({ entries }) {
             <div className="order-history-item-head">
               <time className="order-history-when">{formatHistoryWhen(entry.sentAt)}</time>
               {entry.outcome === 'cancelled' ? (
-                <span className="order-history-badge tone-cancel">🔴 İptal Edildi</span>
+                <span className="order-history-badge tone-cancel">
+                  🔴 {(entry.items || []).length ? 'Hazırlanamadı' : 'İptal Edildi'}
+                </span>
               ) : (
                 <span className="order-history-badge tone-ok">🟢 Teslim Edildi</span>
               )}
@@ -808,6 +813,11 @@ export default function OfficePage() {
             setOrderPhase((p) => (p === 'delivered' ? null : p));
             setLastSentOrder(null);
           }, 8000);
+        } else if (ticket.status === 'cancelled') {
+          const receipt = buildOrderReceipt(ticket);
+          if (receipt) commitHistoryEntry(receipt, 'cancelled');
+          setOrderPhase(null);
+          setLastSentOrder(null);
         } else if (ticket.status === 'new') {
           setOrderPhase('collected');
           rememberSentOrder(ticket);

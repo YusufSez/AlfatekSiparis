@@ -86,6 +86,7 @@ class OrderSoundManager {
     this.failed = false;
     this.loading = null;
     this.usingFallback = false;
+    this.unlocked = false;
   }
 
   ensureAudio(src = ORDER_NOTIFICATION_SOUND_URL) {
@@ -113,6 +114,45 @@ class OrderSoundManager {
       this.audio.src = src;
     }
     return this.audio;
+  }
+
+  /**
+   * PWA/mobile browsers block Audio until a user gesture.
+   * Call once on first tap; safe to call repeatedly.
+   */
+  unlock() {
+    if (this.unlocked || this.failed) return;
+    try {
+      const audio = this.ensureAudio(
+        this.usingFallback ? ORDER_NOTIFICATION_SOUND_FALLBACK_URL : ORDER_NOTIFICATION_SOUND_URL
+      );
+      if (!audio) return;
+      const prevVol = audio.volume;
+      audio.muted = true;
+      audio.volume = 0;
+      const p = audio.play();
+      const finish = () => {
+        try {
+          audio.pause();
+          audio.currentTime = 0;
+        } catch {
+          /* ignore */
+        }
+        audio.muted = false;
+        audio.volume = prevVol || VOLUME;
+        this.unlocked = true;
+      };
+      if (p && typeof p.then === 'function') {
+        p.then(finish).catch(() => {
+          audio.muted = false;
+          audio.volume = prevVol || VOLUME;
+        });
+      } else {
+        finish();
+      }
+    } catch (err) {
+      console.warn('[order-sound] unlock failed', err?.message || err);
+    }
   }
 
   /** Warm cache at app boot — never throws. */
@@ -191,6 +231,8 @@ class OrderSoundManager {
       );
       if (!audio || this.failed) return;
 
+      audio.muted = false;
+      audio.volume = VOLUME;
       audio.pause();
       audio.currentTime = 0;
       const p = audio.play();
@@ -210,6 +252,11 @@ const manager = new OrderSoundManager();
 /** Call after office/kitchen auth (or lazily on first play). */
 export function preloadOrderNotificationSound() {
   return manager.preload();
+}
+
+/** Unlock HTMLAudio for PWA/standalone after a user gesture. */
+export function unlockOrderNotificationSound() {
+  manager.unlock();
 }
 
 /**

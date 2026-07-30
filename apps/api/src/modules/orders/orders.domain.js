@@ -473,11 +473,11 @@ export async function findActiveTicketForOffice(officeId) {
   return ticket ? serializeTicket(ticket) : null;
 }
 
-/** History: delivered tickets + cancelled (closed) sessions without a delivered ticket. */
+/** History: delivered + cancelled tickets + cancelled (closed) sessions without a ticket. */
 export async function getOfficeOrderHistory(officeId, limit = 20) {
   const take = Math.min(20, Math.max(1, limit));
-  const delivered = await prisma.kitchenTicket.findMany({
-    where: { officeId: String(officeId), status: 'delivered' },
+  const finishedTickets = await prisma.kitchenTicket.findMany({
+    where: { officeId: String(officeId), status: { in: ['delivered', 'cancelled'] } },
     include: { office: true },
     orderBy: { createdAt: 'desc' },
     take,
@@ -500,8 +500,8 @@ export async function getOfficeOrderHistory(officeId, limit = 20) {
   });
 
   const entries = [
-    ...delivered.map((t) => ({
-      kind: 'delivered',
+    ...finishedTickets.map((t) => ({
+      kind: t.status === 'cancelled' ? 'cancelled' : 'delivered',
       ticket: serializeTicket(t),
       at: t.updatedAt || t.createdAt,
     })),
@@ -516,7 +516,7 @@ export async function getOfficeOrderHistory(officeId, limit = 20) {
     .slice(0, take);
 
   return {
-    tickets: delivered.map(serializeTicket),
+    tickets: finishedTickets.filter((t) => t.status === 'delivered').map(serializeTicket),
     entries,
     limit: take,
   };
@@ -1224,15 +1224,36 @@ function claimUnavailableSlot(ticketId) {
   });
 }
 
+function unavailableItemKey(item) {
+  const id = item?.menuItemId || item?.id || null;
+  if (id) return `id:${id}`;
+  const name = String(item?.name || '')
+    .trim()
+    .toLowerCase();
+  return name ? `name:${name}` : '';
+}
+
+/** True when every summary line is covered by the reported unavailable items. */
+function isAllSummaryUnavailable(summary, reportedItems) {
+  const lines = Array.isArray(summary) ? summary : [];
+  if (!lines.length) return false;
+  const reported = new Set(
+    (Array.isArray(reportedItems) ? reportedItems : []).map(unavailableItemKey).filter(Boolean)
+  );
+  if (!reported.size) return false;
+  return lines.every((line) => {
+    const byId = line?.menuItemId && reported.has(`id:${line.menuItemId}`);
+    const byName = reported.has(unavailableItemKey({ name: line?.name }));
+    return Boolean(byId || byName);
+  });
+}
+
 export async function reportTicketUnavailable(user, ticketId, { items, note } = {}, meta = {}) {
   const ticket = await prisma.kitchenTicket.findUnique({
     where: { id: ticketId },
     include: { office: true },
   });
   if (!ticket) throw httpError(404, 'Sipariş bulunamadı');
-  if (!['new', 'preparing'].includes(ticket.status)) {
-    throw httpError(400, 'Bu sipariş için eksik ürün bildirilemez');
-  }
 
   const cleanItems = (Array.isArray(items) ? items : [])
     .map((item) => ({
@@ -1246,6 +1267,9 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
   const trimmedNote =
     typeof note === 'string' && note.trim() ? note.trim().slice(0, 200) : null;
 
+  const { summary } = parseTicketSummaryJson(ticket.summaryJson);
+  const orderClosed = isAllSummaryUnavailable(summary, cleanItems);
+
   const eventPayload = {
     ticketId: ticket.id,
     sessionId: ticket.sessionId,
@@ -1253,12 +1277,39 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
     office: ticket.office,
     items: cleanItems,
     note: trimmedNote,
+    orderClosed: orderClosed || ticket.status === 'cancelled',
   };
+
+  // Already closed by a full shortage — idempotent for clients/retries
+  if (ticket.status === 'cancelled') {
+    return { ...eventPayload, orderClosed: true, deduped: true, ticket: serializeTicket(ticket) };
+  }
+
+  if (!['new', 'preparing'].includes(ticket.status)) {
+    throw httpError(400, 'Bu sipariş için eksik ürün bildirilemez');
+  }
 
   const shouldNotify = await claimUnavailableSlot(ticketId);
   if (!shouldNotify) {
     // Idempotent: same ticket within window — no duplicate events/push
     return { ...eventPayload, deduped: true };
+  }
+
+  let updatedTicket = ticket;
+  if (orderClosed) {
+    assertTransition('ticket', ticket.status === 'ready' ? 'preparing' : ticket.status, 'cancelled');
+    const claimed = await prisma.kitchenTicket.updateMany({
+      where: { id: ticketId, status: ticket.status },
+      data: { status: 'cancelled' },
+    });
+    if (claimed.count === 0) {
+      throw httpError(409, 'Sipariş durumu başka bir işlem tarafından değiştirildi');
+    }
+    updatedTicket = await prisma.kitchenTicket.findUnique({
+      where: { id: ticketId },
+      include: { office: true },
+    });
+    clearKitchenResponseTimer(ticketId);
   }
 
   await writeEvent(
@@ -1271,16 +1322,22 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
   await writeAudit(user.id, 'kitchen.unavailable', eventPayload, meta);
 
   const names = cleanItems.map((i) => i.name).join(', ');
-  const body = trimmedNote
-    ? `${names} mevcut olmadığı için hazırlanamadı. ${trimmedNote}`
-    : `${names} mevcut olmadığı için hazırlanamadı.`;
+  const body = orderClosed
+    ? trimmedNote
+      ? `Sipariş eksik ürün nedeniyle hazırlanamadı: ${names}. ${trimmedNote}`
+      : `Sipariş eksik ürün nedeniyle hazırlanamadı: ${names}.`
+    : trimmedNote
+      ? `${names} mevcut olmadığı için hazırlanamadı. ${trimmedNote}`
+      : `${names} mevcut olmadığı için hazırlanamadı.`;
 
   const officeUserIds = await activeUserIds({
     officeId: ticket.officeId,
     role: 'office_user',
   });
   await notifyUsers(officeUserIds, {
-    title: '⚠ Siparişinizde eksik ürün var',
+    title: orderClosed
+      ? 'Sipariş eksik ürün nedeniyle hazırlanamadı'
+      : '⚠ Siparişinizde eksik ürün var',
     body,
     event: SessionEventType.UNAVAILABLE,
     payload: eventPayload,
@@ -1293,7 +1350,7 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
     excludeIds: [user.id],
   });
   await notifyUsers(kitchenStaffIds, {
-    title: 'Eksik ürün bildirildi',
+    title: orderClosed ? 'Sipariş eksik ürünle kapatıldı' : 'Eksik ürün bildirildi',
     body: `${ticket.office.name}: ${names}${trimmedNote ? ` — ${trimmedNote}` : ''}`,
     event: SessionEventType.UNAVAILABLE,
     payload: eventPayload,
@@ -1308,9 +1365,21 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
     requestId: meta.requestId,
   });
 
+  if (orderClosed && updatedTicket) {
+    const ticketPayload = serializeTicket(updatedTicket);
+    await notificationService.notify({
+      rooms: ['kitchen', 'admins', `office:${ticket.officeId}`],
+      event: SocketEvents.KITCHEN_UPDATED,
+      payload: ticketPayload,
+      requestId: meta.requestId,
+    });
+    eventPayload.ticket = ticketPayload;
+  }
+
   logger.info('kitchen.unavailable', {
     ticketId,
     items: names,
+    orderClosed,
     requestId: meta.requestId,
   });
 

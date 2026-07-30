@@ -17,7 +17,7 @@ const LINK_META = {
   '/profile': { icon: '👤', short: 'Profil' },
 };
 
-export default function AppHeader({ title, subtitle, accent, onLogout }) {
+export default function AppHeader({ title, subtitle, accent }) {
   const { user } = useAuth();
   const theme = useTheme();
   const location = useLocation();
@@ -137,13 +137,6 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
               </button>
             </div>
 
-            <button type="button" className="btn ghost nav-logout-btn" onClick={onLogout}>
-              <span className="nav-logout-ico" aria-hidden>
-                🚪
-              </span>
-              <span className="nav-logout-label">Çıkış</span>
-            </button>
-
             <button
               type="button"
               className="btn ghost nav-menu-btn"
@@ -188,9 +181,6 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
               <div className="nav-drawer-links">
                 {links.map((l) => renderNavLink(l, 'nav-drawer-link'))}
               </div>
-              <button type="button" className="btn ghost nav-drawer-logout" onClick={onLogout}>
-                Çıkış
-              </button>
             </nav>
           </>
         )}

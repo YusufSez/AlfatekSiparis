@@ -1,7 +1,16 @@
+import { useEffect, useState } from 'react';
 import { NavLink } from 'react-router-dom';
+import { isElectronDesktop } from '../lib/desktop';
+import { getInstallState, subscribeInstallState } from '../lib/pwaInstall';
 
-/** Shared desktop-app download entry — same look in AppHeader and AdminHeader. */
+/** Shared desktop-app download entry — hidden in Electron and installed PWA. */
 export default function DesktopNavButton() {
+  const [standalone, setStandalone] = useState(() => getInstallState().installed);
+
+  useEffect(() => subscribeInstallState((s) => setStandalone(Boolean(s.installed))), []);
+
+  if (isElectronDesktop() || standalone) return null;
+
   return (
     <NavLink
       to="/desktop"
