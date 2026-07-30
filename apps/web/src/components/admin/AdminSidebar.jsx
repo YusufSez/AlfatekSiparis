@@ -12,7 +12,6 @@ const NAV = [
   { to: '/admin/announcements', label: 'Duyurular', icon: '📢' },
   { to: '/admin/logs', label: 'Loglar', icon: '📜' },
   { to: '/admin/settings', label: 'Ayarlar', icon: '⚙' },
-  { to: '/desktop', label: 'Masaüstü Uygulaması', icon: '💻' },
 ];
 
 function useIsMobileNav(breakpoint = 768) {

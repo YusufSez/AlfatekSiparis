@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import Breadcrumb from '../ui/Breadcrumb';
+import DesktopNavButton from '../DesktopNavButton';
 import NotificationCenter from '../NotificationCenter';
 import { useTheme } from '../../lib/theme';
 import { useAuth } from '../../lib/auth';
@@ -27,6 +28,7 @@ export default function AdminHeader({ breadcrumb = [], onSearch, searchValue, on
             aria-label="Admin arama"
           />
         </form>
+        <DesktopNavButton />
         <NotificationCenter />
         <button
           type="button"

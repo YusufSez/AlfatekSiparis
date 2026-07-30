@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import DesktopNavButton from './DesktopNavButton';
 import NotificationCenter from './NotificationCenter';
 import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
@@ -103,19 +104,7 @@ export default function AppHeader({ title, subtitle, accent, onLogout }) {
           </nav>
 
           <div className="nav-actions">
-            <NavLink
-              to="/desktop"
-              className={({ isActive }) =>
-                `btn ghost nav-desktop-btn ${isActive ? 'active' : ''}`
-              }
-              title="Masaüstü Uygulaması"
-              aria-label="Masaüstü Uygulaması"
-            >
-              <span className="nav-desktop-btn-ico" aria-hidden>
-                💻
-              </span>
-              <span className="nav-desktop-btn-label">Masaüstü Uygulaması</span>
-            </NavLink>
+            <DesktopNavButton />
             <NotificationCenter />
             <button
               type="button"
