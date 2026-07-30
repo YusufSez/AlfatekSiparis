@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useSocketApi, useSocketReconnectKey } from '../lib/socket';
+import { useSocketApi, useSocketReconnectKey, useSocketResumeKey } from '../lib/socket';
 import { useCountdown } from '../lib/useCountdown';
 import { useConfirm } from '../lib/confirm';
 import { useToast } from '../lib/toast';
@@ -18,6 +18,11 @@ import { Skeleton, LoadError, EmptyState } from '../components/LoadStates';
 import { SocketConnectionLabel, SocketOfflineBanner } from '../components/SocketStatus';
 import { StatusDot } from '../components/Badge';
 import { Avatar } from '../components/Avatar';
+import {
+  officeCancelBadgeLabel,
+  officeCancelBodyText,
+  TicketCancelReason,
+} from '../lib/ticketCancelReason';
 
 function timerToneFromRemaining(remaining) {
   if (remaining > 0 && remaining <= 5) return 'final';
@@ -284,6 +289,7 @@ function ticketToHistoryEntry(ticket) {
     notes: receipt?.notes || [],
     sentAt: ticket.updatedAt || ticket.createdAt || receipt?.sentAt,
     outcome,
+    cancelReason: ticket.cancelReason || null,
     _source: 'api',
   };
 }
@@ -302,6 +308,7 @@ function historyEntryFromApi(entry) {
       notes: [],
       sentAt: entry.at,
       outcome: 'cancelled',
+      cancelReason: null,
       _source: 'api',
     };
   }
@@ -338,7 +345,7 @@ function saveCachedOrderHistory(userId, officeId, list) {
     const clean = (list || [])
       .filter(isPersistableHistoryEntry)
       .slice(0, ORDER_HISTORY_FETCH_LIMIT)
-      .map(({ id, sessionId, ticketId, items, notes, sentAt, total, outcome }) => ({
+      .map(({ id, sessionId, ticketId, items, notes, sentAt, total, outcome, cancelReason }) => ({
         id: id || sessionId,
         sessionId,
         ticketId: ticketId || null,
@@ -347,6 +354,7 @@ function saveCachedOrderHistory(userId, officeId, list) {
         sentAt,
         total: total ?? null,
         outcome: outcome || 'delivered',
+        cancelReason: cancelReason || null,
       }));
     localStorage.setItem(orderHistoryStorageKey(userId, officeId), JSON.stringify(clean));
   } catch {
@@ -433,26 +441,33 @@ function OrderHistoryAccordion({ entries }) {
               <time className="order-history-when">{formatHistoryWhen(entry.sentAt)}</time>
               {entry.outcome === 'cancelled' ? (
                 <span className="order-history-badge tone-cancel">
-                  🔴 {(entry.items || []).length ? 'Hazırlanamadı' : 'İptal Edildi'}
+                  {officeCancelBadgeLabel(entry.cancelReason)}
                 </span>
               ) : (
                 <span className="order-history-badge tone-ok">🟢 Teslim Edildi</span>
               )}
             </div>
             {(entry.items || []).length > 0 ? (
-              <ul className="order-history-products">
-                {(entry.items || []).map((item) => (
-                  <li key={`${entry.id}-${item.menuItemId || item.name}`}>
-                    <span aria-hidden>{iconMeta(item.icon).emoji}</span>
-                    <span>
-                      {item.name} x{item.qty}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="order-history-products">
+                  {(entry.items || []).map((item) => (
+                    <li key={`${entry.id}-${item.menuItemId || item.name}`}>
+                      <span aria-hidden>{iconMeta(item.icon).emoji}</span>
+                      <span>
+                        {item.name} x{item.qty}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {entry.outcome === 'cancelled' ? (
+                  <p className="muted tiny order-history-empty-items">
+                    {officeCancelBodyText(entry.cancelReason)}
+                  </p>
+                ) : null}
+              </>
             ) : (
               <p className="muted tiny order-history-empty-items">
-                {entry.outcome === 'cancelled' ? 'Sipariş iptal edildi' : 'Ürün yok'}
+                {officeCancelBodyText(entry.cancelReason)}
               </p>
             )}
             {(entry.notes || []).length > 0 && (
@@ -488,6 +503,7 @@ export default function OfficePage() {
   const { user, logout } = useAuth();
   const { on } = useSocketApi();
   const reconnectKey = useSocketReconnectKey();
+  const resumeKey = useSocketResumeKey();
   const { confirm: confirmDialog } = useConfirm();
   const toast = useToast();
   const [session, setSession] = useState(null);
@@ -616,13 +632,14 @@ export default function OfficePage() {
   );
 
   const commitHistoryEntry = useCallback(
-    (receipt, outcome = 'delivered') => {
+    (receipt, outcome = 'delivered', cancelReason = null) => {
       if (!receipt?.sessionId || !user?.id || !user?.officeId) return;
       const entry = {
         ...receipt,
         id: receipt.sessionId,
         sessionId: receipt.sessionId,
         outcome,
+        cancelReason: cancelReason || receipt.cancelReason || null,
       };
       const next = pushOrderHistoryLocal(user.id, user.officeId, entry);
       // Ensure outcome persisted in cache list
@@ -669,10 +686,6 @@ export default function OfficePage() {
     // No collecting session — restore in-flight kitchen ticket as ACTIVE (not history)
     setSession(null);
     setEvents([]);
-    if (soft) {
-      // Keep post-send UI: orderPhase, lastSentOrder, orderHistory / receipt
-      return;
-    }
     if (active.activeTicket) {
       const receipt = buildOrderReceipt(active.activeTicket);
       if (receipt) {
@@ -684,6 +697,10 @@ export default function OfficePage() {
         setOrderPhase(st === 'preparing' ? 'preparing' : 'collected');
         return;
       }
+    }
+    if (soft) {
+      // Keep post-send UI when server has no active ticket yet
+      return;
     }
     setOrderPhase(null);
     setLastSentOrder(null);
@@ -706,16 +723,16 @@ export default function OfficePage() {
     return () => ac.abort();
   }, [load]);
 
-  // Soft reconnect: hydrate collecting session only; never wipe post-send UI
+  // Soft reconnect / resume from tray: hydrate collecting + in-flight ticket
   useEffect(() => {
-    if (reconnectKey === 0) return;
+    if (reconnectKey === 0 && resumeKey === 0) return;
     const ac = new AbortController();
     load(ac.signal, { includePresence: false, soft: true }).catch((e) => {
       if (e?.name === 'AbortError' || ac.signal.aborted) return;
       setError(e.message);
     });
     return () => ac.abort();
-  }, [load, reconnectKey]);
+  }, [load, reconnectKey, resumeKey]);
 
   // Countdown hitting 0 must NOT fake "dispatching" — wait for session:sent / session:closed.
   // While session is still collecting, timer shows "Kapanıyor" (remaining === 0).
@@ -815,9 +832,22 @@ export default function OfficePage() {
           }, 8000);
         } else if (ticket.status === 'cancelled') {
           const receipt = buildOrderReceipt(ticket);
-          if (receipt) commitHistoryEntry(receipt, 'cancelled');
+          if (receipt) {
+            receipt.cancelReason = ticket.cancelReason || null;
+            commitHistoryEntry(receipt, 'cancelled', ticket.cancelReason || null);
+          }
           setOrderPhase(null);
           setLastSentOrder(null);
+          if (ticket.cancelReason === TicketCancelReason.MISSING_PRODUCT) {
+            setShortageAlert({
+              ticketId: ticket.id,
+              items: ticket.summary || [],
+              note: '',
+              at: new Date().toISOString(),
+              orderClosed: true,
+              cancelReason: ticket.cancelReason,
+            });
+          }
         } else if (ticket.status === 'new') {
           setOrderPhase('collected');
           rememberSentOrder(ticket);
@@ -835,6 +865,8 @@ export default function OfficePage() {
           items: payload?.items || [],
           note: payload?.note || '',
           at: new Date().toISOString(),
+          orderClosed: Boolean(payload?.orderClosed),
+          cancelReason: payload?.cancelReason || null,
         });
       }),
       // OS toasts for inbox events → NotificationCenter (role-filtered)
@@ -1241,10 +1273,20 @@ export default function OfficePage() {
         {shortageAlert && (
           <div className="shortage-alert" role="status">
             <div className="shortage-alert-main">
-              <strong>⚠ Siparişinizde eksik ürün var</strong>
+              <strong>
+                {shortageAlert.orderClosed ||
+                shortageAlert.cancelReason === TicketCancelReason.MISSING_PRODUCT
+                  ? 'Sipariş eksik ürün nedeniyle hazırlanamadı'
+                  : '⚠ Siparişinizde eksik ürün var'}
+              </strong>
               <p>
-                {(shortageAlert.items || []).map((i) => i.name).filter(Boolean).join(', ') || 'Ürün'}{' '}
-                mevcut olmadığı için hazırlanamadı.
+                {shortageAlert.orderClosed ||
+                shortageAlert.cancelReason === TicketCancelReason.MISSING_PRODUCT
+                  ? officeCancelBodyText(TicketCancelReason.MISSING_PRODUCT)
+                  : `${
+                      (shortageAlert.items || []).map((i) => i.name).filter(Boolean).join(', ') ||
+                      'Ürün'
+                    } mevcut olmadığı için hazırlanamadı.`}
               </p>
               {shortageAlert.note ? <p className="shortage-alert-note">{shortageAlert.note}</p> : null}
               {shortageAlert.ticketId ? (

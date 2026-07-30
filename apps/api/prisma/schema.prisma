@@ -26,6 +26,13 @@ enum TicketStatus {
   cancelled
 }
 
+enum TicketCancelReason {
+  user_cancelled
+  missing_product
+  office_cancelled
+  admin_cancelled
+}
+
 model Office {
   id                       String   @id @default(cuid())
   name                     String   @unique
@@ -160,14 +167,15 @@ model SessionSkip {
 }
 
 model KitchenTicket {
-  id          String       @id @default(cuid())
-  sessionId   String       @unique
-  officeId    String
-  status      TicketStatus @default(new)
-  summaryJson String
-  detailsJson String
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id           String              @id @default(cuid())
+  sessionId    String              @unique
+  officeId     String
+  status       TicketStatus        @default(new)
+  cancelReason TicketCancelReason?
+  summaryJson  String
+  detailsJson  String
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
 
   session OrderSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   office  Office       @relation(fields: [officeId], references: [id])

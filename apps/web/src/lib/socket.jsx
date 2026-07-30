@@ -17,6 +17,11 @@ const SocketApiContext = createContext(null);
 const SocketConnectedContext = createContext(false);
 /** Bumps only after reconnect — drives soft hydrate without notifying `on` consumers. */
 const SocketReconnectContext = createContext(0);
+/**
+ * Bumps when the tab/window becomes visible again (Electron tray → show, mobile app switch).
+ * Forces soft hydrate even if the socket never dropped (Chromium may have throttled events).
+ */
+const SocketResumeContext = createContext(0);
 
 const EVENTS = [
   'session:opened',
@@ -38,9 +43,11 @@ export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
   const [connected, setConnected] = useState(false);
   const [reconnectKey, setReconnectKey] = useState(0);
+  const [resumeKey, setResumeKey] = useState(0);
   const [tokenEpoch, setTokenEpoch] = useState(0);
   const handlers = useRef(new Map());
   const hadConnect = useRef(false);
+  const wasHidden = useRef(false);
 
   const on = useCallback((event, fn) => {
     if (!handlers.current.has(event)) handlers.current.set(event, new Set());
@@ -55,6 +62,29 @@ export function SocketProvider({ children }) {
     window.addEventListener('auth:token-rotated', onTokenRotated);
     return () => window.removeEventListener('auth:token-rotated', onTokenRotated);
   }, []);
+
+  // Electron tray hide / mobile background: when visible again, soft-hydrate boards.
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    function onVisibility() {
+      if (document.visibilityState === 'hidden') {
+        wasHidden.current = true;
+        return;
+      }
+      if (document.visibilityState === 'visible' && wasHidden.current) {
+        wasHidden.current = false;
+        setResumeKey((k) => k + 1);
+        // Nudge socket.io in case the transport went quiet while throttled
+        try {
+          socket?.emit?.('presence:ping');
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [socket]);
 
   useEffect(() => {
     if (!user) {
@@ -106,7 +136,7 @@ export function SocketProvider({ children }) {
     <SocketApiContext.Provider value={apiValue}>
       <SocketConnectedContext.Provider value={connected}>
         <SocketReconnectContext.Provider value={reconnectKey}>
-          {children}
+          <SocketResumeContext.Provider value={resumeKey}>{children}</SocketResumeContext.Provider>
         </SocketReconnectContext.Provider>
       </SocketConnectedContext.Provider>
     </SocketApiContext.Provider>
@@ -128,18 +158,25 @@ export function useSocketReconnectKey() {
   return useContext(SocketReconnectContext);
 }
 
+/** Soft hydrate after window becomes visible again (tray / background). */
+export function useSocketResumeKey() {
+  return useContext(SocketResumeContext);
+}
+
 /** Compat: merges all socket slices (re-renders on any change). Prefer specific hooks. */
 export function useSocket() {
   const api = useContext(SocketApiContext);
   const connected = useContext(SocketConnectedContext);
   const reconnectKey = useContext(SocketReconnectContext);
+  const resumeKey = useContext(SocketResumeContext);
   return useMemo(
     () => ({
       socket: api?.socket ?? null,
       on: api?.on,
       connected,
       reconnectKey,
+      resumeKey,
     }),
-    [api, connected, reconnectKey]
+    [api, connected, reconnectKey, resumeKey]
   );
 }

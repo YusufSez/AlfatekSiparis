@@ -11,20 +11,20 @@ router.use(authMiddleware, requireRoles('kitchen', 'admin'), requirePasswordChan
 router.get('/tickets', async (req, res, next) => {
   try {
     const status = req.query.status;
-    const where =
-      status && ['new', 'preparing', 'delivered', 'cancelled'].includes(String(status))
+    const finished = status === 'history' || status === 'finished';
+    const where = finished
+      ? { status: { in: ['delivered', 'cancelled'] } }
+      : status && ['new', 'preparing', 'delivered', 'cancelled'].includes(String(status))
         ? { status: String(status) }
         : { status: { in: ['new', 'preparing'] } };
 
     const take = Math.min(50, Math.max(1, Number(req.query.take) || 50));
+    const isHistoryQuery = finished || status === 'delivered' || status === 'cancelled';
     const tickets = await prisma.kitchenTicket.findMany({
       where,
       include: { office: true },
-      orderBy:
-        status === 'delivered' || status === 'cancelled'
-          ? { updatedAt: 'desc' }
-          : { createdAt: 'desc' },
-      take: status === 'delivered' || status === 'cancelled' ? Math.min(take, 20) : take,
+      orderBy: isHistoryQuery ? { updatedAt: 'desc' } : { createdAt: 'desc' },
+      take: isHistoryQuery ? Math.min(take, 20) : take,
     });
     res.json({ tickets: tickets.map(serializeTicket) });
   } catch (err) {

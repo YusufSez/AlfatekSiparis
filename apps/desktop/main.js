@@ -442,12 +442,20 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Keep WS / timers alive while window is hidden to tray (default Chromium throttles).
+      backgroundThrottling: false,
     },
   });
 
   mainWindow = win;
 
   win.once('ready-to-show', () => win.show());
+
+  try {
+    win.webContents.setBackgroundThrottling(false);
+  } catch (err) {
+    console.warn('[desktop] setBackgroundThrottling failed', err?.message || err);
+  }
 
   const startUrl = resolveStartUrl();
   win.loadURL(startUrl).catch((err) => {

@@ -5,6 +5,7 @@ import { SessionEventType, SocketEvents } from '../../common/sessionEventType.js
 import { logger } from '../../common/logger.js';
 import { parseTicketSummaryJson } from '../../common/ticketSummary.js';
 import { safeJsonParse } from '../../common/safeJson.js';
+import { TicketCancelReason } from '../../common/ticketCancelReason.js';
 import {
   formatOrderedItemLabel,
   isOtherMenuItem,
@@ -258,6 +259,7 @@ export function serializeTicket(ticket) {
     officeId: ticket.officeId,
     office: ticket.office,
     status: ticket.status,
+    cancelReason: ticket.cancelReason || null,
     summary,
     details,
     specialRequests,
@@ -1278,11 +1280,20 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
     items: cleanItems,
     note: trimmedNote,
     orderClosed: orderClosed || ticket.status === 'cancelled',
+    cancelReason:
+      ticket.cancelReason ||
+      (orderClosed || ticket.status === 'cancelled' ? TicketCancelReason.MISSING_PRODUCT : null),
   };
 
   // Already closed by a full shortage — idempotent for clients/retries
   if (ticket.status === 'cancelled') {
-    return { ...eventPayload, orderClosed: true, deduped: true, ticket: serializeTicket(ticket) };
+    return {
+      ...eventPayload,
+      orderClosed: true,
+      cancelReason: ticket.cancelReason || TicketCancelReason.MISSING_PRODUCT,
+      deduped: true,
+      ticket: serializeTicket(ticket),
+    };
   }
 
   if (!['new', 'preparing'].includes(ticket.status)) {
@@ -1300,7 +1311,10 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
     assertTransition('ticket', ticket.status === 'ready' ? 'preparing' : ticket.status, 'cancelled');
     const claimed = await prisma.kitchenTicket.updateMany({
       where: { id: ticketId, status: ticket.status },
-      data: { status: 'cancelled' },
+      data: {
+        status: 'cancelled',
+        cancelReason: TicketCancelReason.MISSING_PRODUCT,
+      },
     });
     if (claimed.count === 0) {
       throw httpError(409, 'Sipariş durumu başka bir işlem tarafından değiştirildi');
@@ -1310,6 +1324,7 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
       include: { office: true },
     });
     clearKitchenResponseTimer(ticketId);
+    eventPayload.cancelReason = TicketCancelReason.MISSING_PRODUCT;
   }
 
   await writeEvent(
@@ -1350,7 +1365,7 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
     excludeIds: [user.id],
   });
   await notifyUsers(kitchenStaffIds, {
-    title: orderClosed ? 'Sipariş eksik ürünle kapatıldı' : 'Eksik ürün bildirildi',
+    title: orderClosed ? 'Sipariş eksik ürün nedeniyle iptal' : 'Eksik ürün bildirildi',
     body: `${ticket.office.name}: ${names}${trimmedNote ? ` — ${trimmedNote}` : ''}`,
     event: SessionEventType.UNAVAILABLE,
     payload: eventPayload,
@@ -1380,6 +1395,7 @@ export async function reportTicketUnavailable(user, ticketId, { items, note } = 
     ticketId,
     items: names,
     orderClosed,
+    cancelReason: eventPayload.cancelReason,
     requestId: meta.requestId,
   });
 

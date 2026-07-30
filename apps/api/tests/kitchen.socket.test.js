@@ -128,6 +128,10 @@ describe('KITCHEN + SOCKET', () => {
       .send(body);
     expect(first.status).toBe(200);
     expect(first.body.report?.deduped).not.toBe(true);
+    expect(first.body.report?.orderClosed).toBe(true);
+    expect(first.body.report?.cancelReason).toBe('missing_product');
+    expect(first.body.report?.ticket?.status).toBe('cancelled');
+    expect(first.body.report?.ticket?.cancelReason).toBe('missing_product');
 
     const afterFirst = await prisma.userNotification.count({
       where: { event: 'ticket.unavailable' },

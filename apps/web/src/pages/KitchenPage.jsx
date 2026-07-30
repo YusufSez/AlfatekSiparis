@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useSocketApi, useSocketReconnectKey } from '../lib/socket';
+import { useSocketApi, useSocketReconnectKey, useSocketResumeKey } from '../lib/socket';
 import { useStaffCalls } from '../lib/staffCallStore';
 import { useConfirm } from '../lib/confirm';
 import { useToast } from '../lib/toast';
@@ -12,15 +12,35 @@ import { LoadError, EmptyState, CardSkeleton } from '../components/LoadStates';
 import { SocketConnectionLabel, SocketOfflineBanner } from '../components/SocketStatus';
 import { iconMeta } from '../lib/uxLabels';
 import { isOtherItem } from '../lib/menuItemRules';
+import {
+  kitchenCancelStatusLabel,
+  TicketCancelReason,
+} from '../lib/ticketCancelReason';
 
 const STATUS_LABEL = {
   new: 'Bekliyor',
   preparing: 'Hazırlanıyor',
   delivered: 'Teslim',
-  cancelled: 'Hazırlanamadı',
+  cancelled: 'İptal Edildi',
 };
 
 const STATUS_RANK = { new: 0, preparing: 1, delivered: 2, cancelled: 2 };
+
+function historyStatusLabel(ticket) {
+  if (ticket?.status === 'cancelled') {
+    return kitchenCancelStatusLabel(ticket.cancelReason);
+  }
+  return STATUS_LABEL.delivered;
+}
+
+function historyStatusClass(ticket) {
+  if (ticket?.status === 'cancelled') {
+    return ticket.cancelReason === TicketCancelReason.MISSING_PRODUCT
+      ? 'status-cancelled-missing'
+      : 'status-cancelled';
+  }
+  return 'status-delivered';
+}
 
 const KitchenClockContext = createContext(Date.now());
 
@@ -183,6 +203,7 @@ export default function KitchenPage() {
   const { logout } = useAuth();
   const { on } = useSocketApi();
   const reconnectKey = useSocketReconnectKey();
+  const resumeKey = useSocketResumeKey();
   const { calls: staffCalls, hydrateFromNotifications, dismiss: dismissStaffCall } = useStaffCalls();
   const { confirm: confirmDialog } = useConfirm();
   const toast = useToast();
@@ -275,7 +296,7 @@ export default function KitchenPage() {
   }, []);
 
   const loadHistory = useCallback(async (signal) => {
-    const hist = await api('/kitchen/tickets?status=delivered&take=20', { signal });
+    const hist = await api('/kitchen/tickets?status=history&take=20', { signal });
     if (signal?.aborted) return;
     setHistory(hist.tickets || []);
   }, []);
@@ -322,16 +343,16 @@ export default function KitchenPage() {
     return () => ac.abort();
   }, [load]);
 
-  // Soft reconnect: active tickets + history (deliveries during gap)
+  // Soft reconnect / resume from tray: active tickets + history
   useEffect(() => {
-    if (reconnectKey === 0) return;
+    if (reconnectKey === 0 && resumeKey === 0) return;
     const ac = new AbortController();
     load(ac.signal).catch((e) => {
       if (e?.name === 'AbortError' || ac.signal.aborted) return;
       setError(e.message);
     });
     return () => ac.abort();
-  }, [load, reconnectKey]);
+  }, [load, reconnectKey, resumeKey]);
 
   useEffect(() => {
     const offNew = on('kitchen:new_ticket', (ticket) => {
@@ -686,9 +707,9 @@ export default function KitchenPage() {
 
         <section className="kitchen-history">
           <h3>Sipariş Geçmişi</h3>
-          <p className="muted tiny">Son 20 teslim edilen sipariş</p>
+          <p className="muted tiny">Son 20 teslim / iptal edilen sipariş</p>
           {history.length === 0 ? (
-            <p className="muted">Henüz teslim kaydı yok.</p>
+            <p className="muted">Henüz geçmiş kaydı yok.</p>
           ) : (
             <div className="history-grid">
               {history.map((ticket) => {
@@ -707,7 +728,9 @@ export default function KitchenPage() {
                           minute: '2-digit',
                         })}
                       </time>
-                      <span className="status-pill status-delivered">{STATUS_LABEL.delivered}</span>
+                      <span className={`status-pill ${historyStatusClass(ticket)}`}>
+                        {historyStatusLabel(ticket)}
+                      </span>
                     </div>
                     <p className="history-summary">{summaryText(ticket) || '—'}</p>
                     <SpecialNotesBox notes={specialNotes} />
