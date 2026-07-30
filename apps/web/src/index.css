@@ -6670,10 +6670,16 @@ html[data-theme='dark'] .special-request-input:focus {
 }
 
 .desktop-download-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
   min-height: 3rem;
   font-size: 1.05rem;
   font-weight: 700;
+  text-decoration: none;
+  box-sizing: border-box;
+  text-align: center;
 }
 
 .desktop-download-features {

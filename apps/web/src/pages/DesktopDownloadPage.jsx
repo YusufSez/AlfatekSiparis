@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom';
-import Button from '../components/ui/Button';
 import { useAuth } from '../lib/auth';
 import { isElectronDesktop } from '../lib/desktop';
 import { APP_VERSION } from '../lib/format';
@@ -72,16 +71,12 @@ function FeatureList({ items }) {
 }
 
 function DownloadCard({ heading, ctaLabel, href, features }) {
-  function onDownload() {
-    window.location.href = href;
-  }
-
   return (
     <section className="card-surface desktop-download-card">
       <h2 className="form-title">{heading}</h2>
-      <Button type="button" variant="primary" className="desktop-download-cta" onClick={onDownload}>
+      <a href={href} className="btn primary desktop-download-cta">
         {ctaLabel}
-      </Button>
+      </a>
       <FeatureList items={features} />
     </section>
   );
