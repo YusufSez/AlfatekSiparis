@@ -17,7 +17,10 @@
     "backup": "npm run backup -w apps/api",
     "restore": "npm run restore -w apps/api",
     "test": "npm run test -w apps/api",
-    "test:coverage": "npm run test:coverage -w apps/api"
+    "test:coverage": "npm run test:coverage -w apps/api",
+    "desktop:dev": "npm run dev -w apps/desktop",
+    "desktop:build": "npm run build -w apps/desktop",
+    "desktop:dist": "npm run dist -w apps/desktop"
   },
   "devDependencies": {
     "concurrently": "^10.0.4"

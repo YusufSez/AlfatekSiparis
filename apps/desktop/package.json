@@ -1,0 +1,20 @@
+{
+  "name": "desktop",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Alfatek Ofis Sipariş — Electron masaüstü kabuğu",
+  "author": "Alfatek",
+  "main": "main.js",
+  "scripts": {
+    "dev": "wait-on http://127.0.0.1:5173 && electron .",
+    "prebuild": "node ./scripts/bake-start-url.js",
+    "build": "electron-builder --dir",
+    "predist": "node ./scripts/bake-start-url.js",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "37.10.3",
+    "electron-builder": "26.15.3",
+    "wait-on": "8.0.5"
+  }
+}

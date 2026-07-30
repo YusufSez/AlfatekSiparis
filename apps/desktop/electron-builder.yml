@@ -1,0 +1,30 @@
+appId: com.alfatek.ofis-siparis
+productName: Alfatek Ofis Sipariş
+copyright: Copyright © Alfatek
+electronVersion: 37.10.3
+
+directories:
+  output: dist
+  buildResources: build
+
+files:
+  - main.js
+  - preload.js
+  - package.json
+  - start-url.json
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+# Runtime loads DESKTOP_START_URL (production SPA). Web dist is not bundled.
+extraMetadata:
+  main: main.js
