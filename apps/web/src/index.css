@@ -6573,12 +6573,78 @@ html[data-theme='dark'] .special-request-input:focus {
   }
 }
 
-/* Desktop download page */
+/* Desktop download page — standalone landing (no app chrome) */
+.desktop-download-shell {
+  max-width: 40rem;
+  padding-top: 1rem;
+  padding-bottom: 2.5rem;
+  display: grid;
+  gap: 1.25rem;
+}
+
+@media (max-width: 1024px) {
+  .page.desktop-download-shell {
+    padding-bottom: 2.5rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .desktop-download-shell:has(.desktop-download-grid) {
+    max-width: 52rem;
+  }
+}
+
+.desktop-download-back {
+  justify-self: start;
+  min-height: 44px;
+  font-weight: 650;
+  padding-inline: 0.65rem;
+}
+
+.desktop-download-hero {
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0 0.25rem;
+}
+
+.desktop-download-logo {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  border-radius: 12px;
+  margin-bottom: 0.35rem;
+}
+
+.desktop-download-hero .brand {
+  margin: 0;
+}
+
+.desktop-download-hero h1 {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(1.45rem, 4vw, 1.9rem);
+  line-height: 1.2;
+}
+
+.desktop-download-lead {
+  margin: 0.25rem 0 0;
+  max-width: 32rem;
+}
+
+.desktop-download-version {
+  margin: 0;
+  text-align: center;
+  font-size: 0.85rem;
+}
+
 .desktop-download-page {
   max-width: 40rem;
   margin-inline: auto;
   display: grid;
   gap: 1rem;
+  width: 100%;
 }
 
 .desktop-download-grid {

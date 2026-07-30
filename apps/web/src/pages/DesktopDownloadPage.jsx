@@ -1,7 +1,8 @@
-import AppHeader from '../components/AppHeader';
+import { useNavigate } from 'react-router-dom';
 import Button from '../components/ui/Button';
 import { useAuth } from '../lib/auth';
 import { isElectronDesktop } from '../lib/desktop';
+import { APP_VERSION } from '../lib/format';
 
 const WINDOWS_INSTALLER = 'Alfatek-Setup.exe';
 const MAC_INSTALLER = 'Alfatek.dmg';
@@ -50,6 +51,13 @@ export function detectDesktopOs(ua = typeof navigator !== 'undefined' ? navigato
   return 'other';
 }
 
+function backPathForRole(role) {
+  if (role === 'admin') return '/admin';
+  if (role === 'office_user') return '/office';
+  if (role === 'kitchen') return '/kitchen';
+  return '/';
+}
+
 function FeatureList({ items }) {
   return (
     <ul className="desktop-download-features">
@@ -80,18 +88,36 @@ function DownloadCard({ heading, ctaLabel, href, features }) {
 }
 
 export default function DesktopDownloadPage() {
-  const { logout } = useAuth();
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const inElectron = isElectronDesktop();
   const os = detectDesktopOs();
   const { windows: windowsDownloadUrl, mac: macDownloadUrl } = getDesktopDownloadUrls();
 
+  function goBack() {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    navigate(backPathForRole(user?.role), { replace: true });
+  }
+
   return (
-    <div className="page">
-      <AppHeader
-        title="Masaüstü Uygulaması"
-        subtitle="Bildirimleri kaçırmamak ve uygulamayı daha hızlı kullanmak için masaüstü sürümünü yükleyebilirsiniz."
-        onLogout={logout}
-      />
+    <div className="page desktop-download-shell">
+      <button type="button" className="btn ghost desktop-download-back" onClick={goBack}>
+        ← Uygulamaya Dön
+      </button>
+
+      <header className="desktop-download-hero">
+        <img src="/alfatek.png" alt="" width={56} height={56} className="desktop-download-logo" />
+        <p className="brand">Alfatek</p>
+        <h1>Masaüstü Uygulaması</h1>
+        <p className="muted desktop-download-lead">
+          Bildirimleri kaçırmamak ve uygulamayı daha hızlı kullanmak için masaüstü sürümünü
+          yükleyebilirsiniz.
+        </p>
+      </header>
+
       <main className="content desktop-download-page">
         {inElectron ? (
           <section className="card-surface desktop-download-card desktop-download-active">
@@ -144,6 +170,8 @@ export default function DesktopDownloadPage() {
           </>
         )}
       </main>
+
+      <p className="desktop-download-version muted">Versiyon {APP_VERSION}</p>
     </div>
   );
 }

@@ -204,6 +204,10 @@
     padding: 0 0.85rem 4.5rem;
   }
 
+  .page.desktop-download-shell {
+    padding-bottom: 2.5rem;
+  }
+
   .app-shell-header {
     margin-left: -0.85rem;
     margin-right: -0.85rem;
@@ -461,6 +465,10 @@
     padding-right: 0.7rem;
     /* Keep bottom clearance for fixed nav + safe-area (do not shrink to 4.25rem). */
     padding-bottom: calc(6.5rem + var(--bottom-nav-h) + env(safe-area-inset-bottom, 0px));
+  }
+
+  .page.desktop-download-shell {
+    padding-bottom: 2.5rem;
   }
 
   .app-shell-header {
