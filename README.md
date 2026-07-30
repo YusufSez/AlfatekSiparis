@@ -31,10 +31,8 @@ Alfatek Ofis Sipariş Sistemi; ofis çalışanlarının toplu içecek siparişle
 
 ### Database
 
-- SQLite
+- PostgreSQL
 - Prisma
-
-> PostgreSQL ayrı bir production servisi değildir. İlerideki migrasyon / roadmap maddesidir (aşağıdaki Roadmap).
 
 ### Deployment
 
@@ -118,7 +116,7 @@ export VITE_API_URL="https://api.siparis.ornek.com"
 
 | Değişken | Zorunlu | Açıklama |
 | -------- | ------- | -------- |
-| `DATABASE_URL` | evet | **SQLite** dosya URL’si. Production compose: `file:./data/prod.db` → container içinde `apps/api/prisma/data/prod.db`, Docker volume `api_data` ile kalıcı |
+| `DATABASE_URL` | evet | **PostgreSQL** connection string (`postgresql://…`). Render Postgres Internal/External URL; genelde `?sslmode=require` gerekir |
 | `JWT_SECRET` | **evet (prod)** | JWT imza anahtarı; zayıf değer production boot’u reddeder. Güçlü rastgele üretin |
 | `PORT` | hayır | API portu (varsayılan `4000`) |
 | `NODE_ENV` | prod | `production` olmalı |
@@ -164,16 +162,17 @@ cd AlfatekSiparis
 export JWT_SECRET='uzun-rastgele-secret'
 export CORS_ORIGIN='https://siparis.ornek.com'
 export VITE_API_URL='https://api.siparis.ornek.com'
+export DATABASE_URL='postgresql://USER:PASSWORD@HOST:5432/DB?sslmode=require'
 
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
 | Servis | Açıklama |
 | ------ | -------- |
-| `api` | Node + Prisma (`migrate deploy`) + Express (`:4000`), SQLite |
+| `api` | Node + Prisma (`migrate deploy`) + Express (`:4000`), **PostgreSQL** |
 | `web` | Multi-stage Vite build → Nginx static (`:80`) |
 
-**SQLite kalıcılığı:** `docker-compose.prod.yml` içinde `DATABASE_URL=file:./data/prod.db` ve volume `api_data` → `/app/apps/api/prisma/data`. Ayrı bir veritabanı container’ı yoktur.
+**PostgreSQL:** `DATABASE_URL` host ortamından / `.env` üzerinden verilir (Render Postgres veya harici managed DB). SQLite dosya volume’u yoktur.
 
 ### Kontrol
 
@@ -210,17 +209,17 @@ curl -s http://127.0.0.1:4000/version
 
 # Database İşlemleri
 
-Production **SQLite + Prisma** kullanır. Ayrı PostgreSQL / DB servisi çalıştırılmaz.
+Production **PostgreSQL + Prisma** kullanır (`DATABASE_URL=postgresql://…`).
 
 Container açılışında otomatik:
 
 ```text
-mkdir -p prisma/data → prisma migrate deploy → node src/index.js
+prisma migrate deploy → node src/index.js
 ```
 
 ### Migration
 
-Prisma migration’ları SQLite şemasına uygulanır:
+Prisma migration’ları PostgreSQL şemasına uygulanır:
 
 ```bash
 npm run db:migrate -w apps/api
@@ -239,16 +238,18 @@ npm run db:seed -w apps/api
 > (`NODE_ENV=production`, ayrıntılar: [docs/RENDER_ENV.md](docs/RENDER_ENV.md)).
 > Bootstrap sonrası bu env değişkenlerini kaldırın.
 
-### Yedek (SQLite)
+### Yedek (PostgreSQL)
+
+`pg_dump` / `psql` PATH’te olmalıdır.
 
 ```bash
 npm run backup
-# → backups/backup-YYYY-MM-DD-HH-mm.db
-npm run restore -- backup-YYYY-MM-DD-HH-mm.db
+# → backups/backup-YYYY-MM-DD-HH-mm.sql
+npm run restore -- backup-YYYY-MM-DD-HH-mm.sql
 ```
 
-Docker’da: `api_data` volume’unu düzenli kopyalayın veya container içinden `prisma/data/prod.db` dosyasını alın.  
-`docker compose ... down -v` volume’u siler ve **tüm SQLite verisini yok eder**.
+Production’da yedekleri Render Postgres snapshot / harici `pg_dump` ile de alın.  
+`npm run db:setup` veya `db:seed` production’da **çalıştırılmamalıdır** (tüm veriyi siler).
 
 ---
 
@@ -384,7 +385,7 @@ Kurulum özeti:
 - [ ] HTTPS aktif
 - [ ] Frontend çalışıyor
 - [ ] API cevap veriyor (`/health`, `/version`)
-- [ ] SQLite bağlantısı var (API boot + `prod.db` / volume logları temiz)
+- [ ] PostgreSQL bağlantısı var (`DATABASE_URL`, API boot logları temiz)
 - [ ] Prisma migration tamam (`migrate deploy` hata vermiyor)
 - [ ] Admin giriş yapabiliyor
 - [ ] Ofis sipariş oluşturabiliyor
@@ -402,7 +403,7 @@ Kurulum özeti:
 
 - `.env` dosyaları repoya gönderilmemeli.
 - Secret anahtarları (`JWT_SECRET`, `VAPID_PRIVATE_KEY`) değiştirilmeden / örnek değerlerle kullanılmamalı.
-- SQLite dosyası / `api_data` volume dışarıya (public port) açık bırakılmamalı; yalnızca API container erişsin.
+- Postgres credentials / `DATABASE_URL` sızdırılmamalı; DB yalnızca API’nin erişebildiği private network’te olsun.
 - Production’da debug / Swagger (`/docs`) kapalıdır.
 - `NODE_ENV=production` kullanın.
 - Güvenlik duvarında yalnızca 80/443 (ve SSH) açık tutun; API’yi mümkünse localhost / private network’te tutup reverse proxy ile yayınlayın.
@@ -412,13 +413,20 @@ Kurulum özeti:
 
 # Yerel Geliştirme (özet)
 
+PostgreSQL gerekir (`docker compose up -d db` veya yerel Postgres).
+
 ```bash
 npm install
 cp .env.example .env
-npm run db:setup
+# DATABASE_URL=postgresql://alfatek:alfatek@127.0.0.1:5432/alfatek
+docker compose up -d db
+npm run db:setup   # migrate + seed — yalnızca local; production’da YASAK
 npm run dev:api   # :4000
 npm run dev:web   # :5173
 ```
+
+> `db:setup` / `db:seed` tüm veriyi siler. Production veya paylaşılan Render DB’de asla çalıştırmayın.
+> Production ilk admin: `ADMIN_*` bootstrap ([docs/RENDER_ENV.md](docs/RENDER_ENV.md)).
 
 Docker development:
 
@@ -441,7 +449,7 @@ Detaylı telefon/LAN testi, API tablosu, socket eventleri ve monitoring için a�
 - Notification Center + Web Push
 - Session timeline, presence
 - State machine (session + ticket)
-- Backup / restore (SQLite)
+- Backup / restore (`pg_dump` / `psql`)
 - Prometheus metrics (`/metrics`)
 - Health & version endpointleri
 
@@ -457,7 +465,7 @@ flowchart TD
   S --> E
   E --> D[Domain / Services]
   D --> P[Prisma]
-  P --> DB[(SQLite)]
+  P --> DB[(PostgreSQL)]
   D --> SM[State Machine]
   D --> SE[SessionEvent / AuditLog]
   D --> NS[NotificationService]
@@ -513,8 +521,7 @@ Sipariş Aç → Katılım → Onay / Timeout → Kitchen
 | Sürüm | Hedef |
 | ----- | ----- |
 | **v1.1** | Redis Presence + Socket.IO adapter (multi-instance) |
-| **v1.2** | SQLite → PostgreSQL migrasyonu + `pg_dump` / `pg_restore` |
-| **v1.3** | Mail / Teams / Slack notification adapter’ları |
+| **v1.2** | Mail / Teams / Slack notification adapter’ları |
 | **v2.0** | Category, Stock, gelişmiş Analytics |
 
 ---

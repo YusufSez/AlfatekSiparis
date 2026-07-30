@@ -1,3 +1,4 @@
+import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -13,8 +14,51 @@ function stamp() {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}-${p(d.getHours())}-${p(d.getMinutes())}`;
 }
 
-/** @typedef {{ backup: () => Promise<{ path: string }> }} BackupProvider */
+function run(cmd, args, opts = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'], ...opts });
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (err) => {
+      if (err.code === 'ENOENT') {
+        reject(new Error(`${cmd} bulunamadı. PostgreSQL client tools (pg_dump) PATH'te olmalı.`));
+        return;
+      }
+      reject(err);
+    });
+    child.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`${cmd} exit ${code}${stderr ? `: ${stderr.trim()}` : ''}`));
+    });
+  });
+}
 
+/** @typedef {{ backup: () => Promise<{ path: string, provider: string }> }} BackupProvider */
+
+export class PostgresBackupProvider {
+  constructor(connectionUrl) {
+    this.connectionUrl = connectionUrl;
+  }
+
+  async backup() {
+    fs.mkdirSync(backupsDir, { recursive: true });
+    const target = path.join(backupsDir, `backup-${stamp()}.sql`);
+    await run('pg_dump', [
+      '--dbname',
+      this.connectionUrl,
+      '--no-owner',
+      '--no-acl',
+      '--format=plain',
+      '--file',
+      target,
+    ]);
+    return { path: target, provider: 'postgresql' };
+  }
+}
+
+/** Legacy SQLite file copy (schema is PostgreSQL; kept for old local backups only). */
 export class SqliteBackupProvider {
   constructor(dbFilePath) {
     this.dbFilePath = dbFilePath;
@@ -31,30 +75,22 @@ export class SqliteBackupProvider {
   }
 }
 
-/** İleride PostgreSQL için: pg_dump çağırır */
-export class PostgresBackupProvider {
-  constructor(connectionUrl) {
-    this.connectionUrl = connectionUrl;
-  }
-
-  async backup() {
-    throw new Error(
-      'PostgresBackupProvider henüz aktif değil. DATABASE_URL postgres olduğunda pg_dump ile genişletin.'
-    );
-  }
-}
-
 export function createBackupProvider() {
-  const url = process.env.DATABASE_URL || 'file:./dev.db';
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    throw new Error('DATABASE_URL tanımlı değil. PostgreSQL connection string gerekli.');
+  }
   if (url.startsWith('postgresql') || url.startsWith('postgres')) {
     return new PostgresBackupProvider(url);
   }
-  // Prisma sqlite: file:./dev.db relative to prisma folder
-  const relative = url.replace(/^file:/, '');
-  const dbPath = path.isAbsolute(relative)
-    ? relative
-    : path.resolve(__dirname, '../prisma', relative);
-  return new SqliteBackupProvider(dbPath);
+  if (url.startsWith('file:')) {
+    const relative = url.replace(/^file:/, '');
+    const dbPath = path.isAbsolute(relative)
+      ? relative
+      : path.resolve(__dirname, '../prisma', relative);
+    return new SqliteBackupProvider(dbPath);
+  }
+  throw new Error(`Desteklenmeyen DATABASE_URL (postgresql:// bekleniyor): ${url.slice(0, 32)}…`);
 }
 
 async function main() {

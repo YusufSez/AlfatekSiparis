@@ -1,20 +1,38 @@
 services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: alfatek
+      POSTGRES_PASSWORD: alfatek
+      POSTGRES_DB: alfatek
+    ports:
+      - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alfatek -d alfatek"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   api:
     image: node:22-alpine
     working_dir: /app
     volumes:
       - ./:/app
       - api_node_modules:/app/node_modules
-      - sqlite_data:/app/apps/api/prisma
-    command: sh -c "npm install && npm run db:setup -w apps/api && npm run dev -w apps/api"
+    command: sh -c "npm install && npm run db:migrate -w apps/api && npm run db:seed -w apps/api && npm run dev -w apps/api"
     ports:
       - "4000:4000"
     environment:
       PORT: 4000
       JWT_SECRET: docker-dev-secret
-      DATABASE_URL: file:./dev.db
+      DATABASE_URL: postgresql://alfatek:alfatek@db:5432/alfatek
       CORS_ORIGIN: http://localhost:5173
       SESSION_DURATION_SEC: 120
+    depends_on:
+      db:
+        condition: service_healthy
 
   web:
     image: node:22-alpine
@@ -33,4 +51,4 @@ services:
 volumes:
   api_node_modules:
   web_node_modules:
-  sqlite_data:
+  pg_data:

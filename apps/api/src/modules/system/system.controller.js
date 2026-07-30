@@ -41,7 +41,9 @@ router.get('/version', (_req, res) => {
     ? 'postgresql'
     : dbUrl.includes('mysql')
       ? 'mysql'
-      : 'sqlite';
+      : dbUrl.startsWith('file:')
+        ? 'sqlite'
+        : 'unknown';
 
   res.json({
     version: APP_VERSION,

@@ -17,7 +17,7 @@ permissions:
 env:
   NODE_VERSION: '22'
   JWT_SECRET: ci-test-secret-not-for-production
-  DATABASE_URL: file:./test.db
+  DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
   CORS_ORIGIN: http://localhost:5173
   NODE_ENV: test
   CI: true
@@ -27,6 +27,21 @@ jobs:
     name: Test · Build · Docker
     runs-on: ubuntu-latest
     timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Checkout
@@ -45,9 +60,11 @@ jobs:
         working-directory: apps/api
         run: npx prisma generate
 
-      - name: Prisma migrate (CI SQLite)
+      - name: Prisma migrate (CI PostgreSQL)
         working-directory: apps/api
         run: npx prisma migrate deploy
+        env:
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
 
       - name: Lint (web)
         run: npm run lint -w apps/web
@@ -55,14 +72,14 @@ jobs:
       - name: Test
         run: npm test
         env:
-          DATABASE_URL: file:./test.db
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
           JWT_SECRET: ci-test-secret-not-for-production
           NODE_ENV: test
 
       - name: Coverage
         run: npm run test:coverage
         env:
-          DATABASE_URL: file:./test.db
+          DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
           JWT_SECRET: ci-test-secret-not-for-production
           NODE_ENV: test
 

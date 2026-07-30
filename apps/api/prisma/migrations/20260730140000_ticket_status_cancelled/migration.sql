@@ -1,2 +1,0 @@
--- Allow kitchen tickets to end as cancelled (e.g. all items unavailable).
--- SQLite stores enums as TEXT; no schema rewrite required beyond documentation.

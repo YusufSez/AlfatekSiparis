@@ -10,7 +10,9 @@ services:
       NODE_ENV: production
       PORT: 4000
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
-      DATABASE_URL: file:./data/prod.db
+      # Managed Postgres (Render / Cloud SQL / local). Example:
+      # postgresql://USER:PASSWORD@HOST:5432/DB?sslmode=require
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:?VAPID_PUBLIC_KEY is required}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:?VAPID_PRIVATE_KEY is required}
@@ -21,8 +23,6 @@ services:
       TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       GIT_COMMIT: ${GIT_COMMIT:-}
       BUILD_DATE: ${BUILD_DATE:-}
-    volumes:
-      - api_data:/app/apps/api/prisma/data
     restart: unless-stopped
 
   web:
@@ -37,6 +37,3 @@ services:
     depends_on:
       - api
     restart: unless-stopped
-
-volumes:
-  api_data:

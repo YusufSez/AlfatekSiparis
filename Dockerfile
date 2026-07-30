@@ -21,7 +21,7 @@ COPY apps/api ./apps/api
 WORKDIR /app/apps/api
 RUN npx prisma generate
 EXPOSE 4000
-CMD ["sh", "-c", "mkdir -p prisma/data && npx prisma migrate deploy && node src/index.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node src/index.js"]
 
 # ── Web production image ──────────────────────────────────────────
 FROM node:22-alpine AS web-build

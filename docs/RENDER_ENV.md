@@ -7,6 +7,8 @@ Docker dosyaları:
 - API: `Dockerfile.api` (context = repo root)
 - Web: `Dockerfile.web` (context = repo root)
 
+Veritabanı: **PostgreSQL** (Render Postgres veya harici managed Postgres). SQLite kullanılmaz.
+
 ---
 
 ## 1) API servisi (Runtime)
@@ -19,8 +21,9 @@ NODE_ENV=production
 # JWT — güçlü rastgele (ör. openssl rand -hex 32)
 JWT_SECRET=
 
-# SQLite kalıcı disk yolu (Render Disk mount ile uyumlu tutun)
-DATABASE_URL=file:./data/prod.db
+# Render Postgres → Connect → External/Internal Database URL
+# Örnek: postgresql://USER:PASSWORD@HOST/DB?sslmode=require
+DATABASE_URL=
 
 # Frontend origin (trailing slash yok). Virgülle çoklu olabilir.
 CORS_ORIGIN=https://YOUR-WEB.onrender.com
@@ -69,6 +72,13 @@ ADMIN_PASSWORD=
 
 Kısmi tanımlama (yalnızca biri set) production boot’u hata ile durdurur.
 
+### Seed / db:setup — production’da YASAK
+
+`npm run db:seed` ve `npm run db:setup` tüm tabloları `deleteMany` ile temizler.
+Production shell’de **asla** çalıştırmayın. İlk admin için yalnızca `ADMIN_*` bootstrap kullanın.
+
+Container boot (`Dockerfile.api`) yalnızca `prisma migrate deploy` + `node` çalıştırır; seed yoktur.
+
 ---
 
 ## 2) Web servisi (Build-time)
@@ -101,16 +111,16 @@ Opsiyonel:
 | `SESSION_DURATION_SEC` | Kullanılmıyor (süre DB ayarında) |
 | `DOTENV_CONFIG_PATH` | Prod’da `.env.development` engeli; set etmeyin |
 | Local `JWT_SECRET` / demo şifreler | Prod boot reddeder veya güvensiz |
+| `file:./…` SQLite URL | Desteklenmez; schema provider `postgresql` |
 
 ---
 
-## 4) Disk (SQLite)
+## 4) Veritabanı (PostgreSQL)
 
-API container’da `DATABASE_URL=file:./data/prod.db` kullanıyorsanız:
-
-- Render **Persistent Disk** bağlayın (ör. mount: `/app/apps/api/prisma/data`)
-- Dockerfile.api `WORKDIR` `/app/apps/api` ve `mkdir -p prisma/data` ile uyumludur
-- Disk yoksa restart’ta veri kaybolur
+1. Render’da **PostgreSQL** instance oluşturun.
+2. Internal Database URL’yi API servisinin `DATABASE_URL` değerine yapıştırın (`sslmode=require` genelde gerekir).
+3. API container her açılışta `prisma migrate deploy` çalıştırır — şema güncellenir, veri silinmez.
+4. SQLite Persistent Disk **gerekmez** ve kullanılmamalıdır.
 
 ---
 
@@ -118,8 +128,9 @@ API container’da `DATABASE_URL=file:./data/prod.db` kullanıyorsanız:
 
 - [ ] API: `JWT_SECRET`, `CORS_ORIGIN`, VAPID pair, `METRICS_TOKEN`
 - [ ] API: `TRUST_PROXY=1`
-- [ ] API: kalıcı `DATABASE_URL` + disk
+- [ ] API: `DATABASE_URL` = Render Postgres (`postgresql://…`)
 - [ ] İlk açılış: `ADMIN_NAME` / `ADMIN_USERNAME` / `ADMIN_PASSWORD`
 - [ ] Giriş sonrası `ADMIN_*` kaldırıldı
 - [ ] Web build: `VITE_API_URL` + `VITE_VAPID_PUBLIC_KEY`
 - [ ] `CORS_ORIGIN` web URL’si ile eşleşiyor
+- [ ] Production’da `db:seed` / `db:setup` çalıştırılmadı

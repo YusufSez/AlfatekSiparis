@@ -1,6 +1,20 @@
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 
+/**
+ * DESTRUCTIVE: deleteMany on all domain tables, then inserts demo data.
+ * Never run against production. Prefer ADMIN_* bootstrap for the first admin.
+ * Override only for intentional wipe: FORCE_SEED=1
+ */
+if (process.env.NODE_ENV === 'production' && process.env.FORCE_SEED !== '1') {
+  console.error(
+    'Seed reddedildi: NODE_ENV=production. Production’da db:seed / db:setup çalıştırmayın. ' +
+      'İlk admin için ADMIN_* bootstrap kullanın (docs/RENDER_ENV.md). ' +
+      'Bilinçli wipe için FORCE_SEED=1 gerekir.'
+  );
+  process.exit(1);
+}
+
 const prisma = new PrismaClient();
 
 async function main() {
@@ -39,8 +53,6 @@ async function main() {
   const menu = [
     { name: 'Çay', icon: 'tea', sortOrder: 1 },
     { name: 'Soda', icon: 'soda', sortOrder: 2 },
-    { name: 'Kahve', icon: 'coffee', sortOrder: 3 },
-    { name: 'Su', icon: 'water', sortOrder: 4 },
     { name: 'Türk Kahvesi', icon: 'turkish_coffee', sortOrder: 5 },
     { name: 'Diğer', icon: 'other', sortOrder: 99 },
   ];
@@ -48,7 +60,7 @@ async function main() {
     await prisma.menuItem.create({ data: item });
   }
 
-  const passwordHash = await bcrypt.hash('123456', 10);
+  const passwordHash = await bcrypt.hash('Alfatek2026.', 10);
 
   await prisma.user.create({
     data: { name: 'Admin', username: 'admin', passwordHash, role: 'admin' },
@@ -58,16 +70,14 @@ async function main() {
   });
   await prisma.user.createMany({
     data: [
-      { name: 'Yusuf', username: 'yusuf', passwordHash, role: 'office_user', officeId: teknik.id },
-      { name: 'Ahmet', username: 'ahmet', passwordHash, role: 'office_user', officeId: teknik.id },
-      { name: 'Mehmet', username: 'mehmet', passwordHash, role: 'office_user', officeId: teknik.id },
-      { name: 'Murat', username: 'murat', passwordHash, role: 'office_user', officeId: operasyon.id },
-      { name: 'Veli', username: 'veli', passwordHash, role: 'office_user', officeId: operasyon.id },
+      { name: 'Yusufcan', username: 'yusufcan', passwordHash, role: 'office_user', officeId: teknik.id },
+      { name: 'Emirhan', username: 'emirhan', passwordHash, role: 'office_user', officeId: teknik.id },
+      { name: 'Onur', username: 'onur', passwordHash, role: 'office_user', officeId: teknik.id },
     ],
   });
 
-  console.log('Seed OK — şifre: 123456');
-  console.log('admin / mutfak / yusuf / ahmet / mehmet / murat / veli');
+  console.log('Seed OK — şifre: Alfatek2026.');
+  console.log('admin / mutfak / yusufcan / emirhan / onur');
 }
 
 main()
